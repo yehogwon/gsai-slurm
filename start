@@ -6,6 +6,10 @@ partition=$3
 command=$SLURM_EXEC_COMMAND
 
 url=$TEAMS_SLURM_WEBHOOK
+if [ -z "$url" ]; then
+    echo "Error: TEAMS_SLURM_WEBHOOK is not set"
+    exit 1
+fi
 
 theme_color="C274E3"
 title="🚀 Job ($job_id: $job_name) is started ($partition)"
