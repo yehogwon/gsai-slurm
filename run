@@ -1,5 +1,7 @@
 #!/bin/bash
 
+script_dir=$(dirname $(realpath $0))
+
 usage="Usage: bash $0 <job_name> <partition> <n_gpus> <command>"
 
 n_args=$#
@@ -79,8 +81,8 @@ EOF
 execution="$command"
 
 export SLURM_EXEC_COMMAND="$execution"
-start="bash /home/yehok117/slurm/start.sh \$SLURM_JOB_ID \$SLURM_JOB_NAME \$SLURM_JOB_PARTITION"
-done="bash /home/yehok117/slurm/done.sh \$SLURM_JOB_ID \$SLURM_JOB_NAME \$SLURM_JOB_PARTITION \$?"
+start="bash $script_dir/start \$SLURM_JOB_ID \$SLURM_JOB_NAME \$SLURM_JOB_PARTITION"
+done="bash $script_dir/done \$SLURM_JOB_ID \$SLURM_JOB_NAME \$SLURM_JOB_PARTITION \$?"
 
 script_path=$(mktemp)
 echo "$_sbatch_shebang" > $script_path
