@@ -97,10 +97,15 @@ if [ "$env_type" == "conda" ]; then
     _sbatch_env_setup=$(cat <<'EOF'
 source ~/.conda_init.sh
 conda activate $env_name
+which python
 EOF
 )
 elif [ "$env_type" == "venv" ]; then
-    _sbatch_env_setup="source ~/.venv/bin/activate"
+    _sbatch_env_setup=$(cat <<'EOF'
+source ~/.venv/bin/activate
+which python
+EOF
+)
 else
     _sbatch_env_setup=$(cat <<'EOF'
 export UUIDLIST=$(nvidia-smi -L | cut -d '(' -f 2 | awk '{print$2}' | tr -d ")" | paste -s -d, -)
@@ -112,7 +117,6 @@ fi
 _sbatch_env_show=$(cat <<'EOF'
 echo "%%%%%%%%%%%% ENVIRONMENT %%%%%%%%%%%%"
 env
-which python
 EOF
 )
 
