@@ -135,8 +135,9 @@ if [ "$env_type" == "docker" ]; then
         --name $(whoami)_$job_name \
         $env_name $command"
 elif [ "$env_type" == "singularity" ]; then
-    execution="singularity run \
+    execution="singularity exec \
         --nv \
+        --env WANDB_API_KEY=$WANDB_API_KEY \
         --bind $(pwd):/workspace \
         $env_name $command"
 else
