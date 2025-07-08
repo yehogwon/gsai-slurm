@@ -2,7 +2,7 @@
 
 script_dir=$(dirname $(realpath $0))
 
-usage="Usage: bash $0 <venv|conda|docker> <env_name: only for conda and docker> <job_name> <partition> <n_gpus> <command>"
+usage="Usage: bash $0 <venv|conda|docker> <env_name: only for conda and docker> <job_name> <partition> <n_gpus> <time> <command>"
 
 n_args=$#
 if [ $n_args -lt 5 ]; then
@@ -27,7 +27,8 @@ fi
 job_name=$2
 partition=$3
 n_gpus=$4
-shift 4
+time=$5
+shift 5
 command=$@
 
 # check if the same jobname is running
@@ -65,9 +66,9 @@ else
 fi
 
 _sbatch_gres="#SBATCH --gres=gpu:$n_gpus"
+_sbatch_time="#SBATCH --time=$time"
 
 _sbatch_prefix=$(cat <<'EOF'
-#SBATCH --time=3-00:00:00
 #SBATCH --nodes=1
 #SBATCH --exclude=n48
 #SBATCH --ntasks=1
@@ -142,6 +143,7 @@ echo "$_sbatch_joberror" >> $script_path
 echo "$_sbatch_partition" >> $script_path
 echo "$_sbatch_qos" >> $script_path
 echo "$_sbatch_gres" >> $script_path
+echo "$_sbatch_time" >> $script_path
 echo "$_sbatch_prefix" >> $script_path
 echo "$_sbatch_env_setup" >> $script_path
 echo "$_sbatch_env_show" >> $script_path
