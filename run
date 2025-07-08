@@ -44,8 +44,8 @@ EOF
 )
 
 _sbatch_jobname="#SBATCH --job-name=$job_name"
-_sbatch_joboutput="#SBATCH --output=/home/yehok117/slurm_log/out/$job_name.%A.out"
-_sbatch_joberror="#SBATCH --error=/home/yehok117/slurm_log/err/$job_name.%A.err"
+_sbatch_joboutput="#SBATCH --output=$HOME/slurm_log/out/$job_name.%A.out"
+_sbatch_joberror="#SBATCH --error=$HOME/slurm_log/err/$job_name.%A.err"
 
 
 if [ "$partition" == "hpgpu" ]; then
