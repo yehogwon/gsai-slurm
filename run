@@ -126,7 +126,7 @@ if [ "$env_type" == "docker" ]; then
         -it \
         --rm \
         --gpus \$GPULIST \
-        --env WANDB_API_KEY \
+        -e WANDB_API_KEY=$WANDB_API_KEY \
         --volume $(pwd):/workspace \
         --name $(whoami)_$job_name \
         $env_name $command"
