@@ -102,11 +102,7 @@ EOF
 elif [ "$env_type" == "venv" ]; then
     _sbatch_env_setup="source ~/.venv/bin/activate"
 else
-    _sbatch_env_setup=$(cat <<'EOF'
-export UUIDLIST=$(nvidia-smi -L | cut -d '(' -f 2 | awk '{print$2}' | tr -d ")" | paste -s -d, -)
-export GPULIST=\"device=${UUIDLIST}\"
-EOF
-)
+    _sbatch_env_setup=""
 fi
 
 _sbatch_env_show=$(cat <<'EOF'
@@ -118,6 +114,8 @@ EOF
 
 
 if [ "$env_type" == "docker" ]; then
+    UUIDLIST=$(nvidia-smi -L | cut -d '(' -f 2 | awk '{print$2}' | tr -d ")" | paste -s -d, -)
+    GPULIST=\"device=${UUIDLIST}\"
     execution="docker run \
         -it \
         --rm \
