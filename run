@@ -2,20 +2,39 @@
 
 script_dir=$(dirname $(realpath $0))
 
-usage="Usage: bash $0 <job_name> <partition> <n_gpus> <command>"
+usage="Usage: bash $0 <venv|conda|docker> <env_name: only for conda and docker> <job_name> <partition> <n_gpus> <command>"
 
 n_args=$#
-if [ $n_args -lt 3 ]; then
+if [ $n_args -lt 5 ]; then
     echo "Error: Invalid arguments"
     echo $usage
     exit 1
 fi
 
-job_name=$1
-partition=$2
-n_gpus=$3
-shift 3
+env_type=$1
+
+if [ "$env_type" == "venv" ]; then
+    env_name=""
+elif [ "$env_type" == "conda" ] || [ "$env_type" == "docker" ]; then
+    env_name=$2
+    shift 1
+else
+    echo "Error: Invalid env_type: $env_type"
+    echo $usage
+    exit 1
+fi
+
+job_name=$2
+partition=$3
+n_gpus=$4
+shift 4
 command=$@
+
+# check if the same jobname is running
+if squeue -u $(whoami) --format="%j" | grep -q "^${job_name}$"; then
+    echo "Error: Job $job_name is already running"
+    exit 1
+fi
 
 
 _sbatch_shebang=$(cat <<'EOF'
@@ -70,15 +89,46 @@ echo "CUDA_VERSION=$CUDA_VERSION"
 nvidia-smi
 nvidia-smi -L
 
-echo "%%%%%%%%%%%% ENVIRONMENT %%%%%%%%%%%%"
-source ~/.conda_init.sh
-conda activate topk-py39
-which python
-
 EOF
 )
 
-execution="$command"
+if [ "$env_type" == "conda" ]; then
+    _sbatch_env_setup=$(cat <<'EOF'
+source ~/.conda_init.sh
+conda activate $env_name
+EOF
+)
+elif [ "$env_type" == "venv" ]; then
+    _sbatch_env_setup="source ~/.venv/bin/activate"
+else
+    _sbatch_env_setup=$(cat <<'EOF'
+export UUIDLIST=$(nvidia-smi -L | cut -d '(' -f 2 | awk '{print$2}' | tr -d ")" | paste -s -d, -)
+export GPULIST=\"device=${UUIDLIST}\"
+EOF
+)
+fi
+
+_sbatch_env_show=$(cat <<'EOF'
+echo "%%%%%%%%%%%% ENVIRONMENT %%%%%%%%%%%%"
+env
+which python
+EOF
+)
+
+
+if [ "$env_type" == "docker" ]; then
+    execution="docker run \
+        -it \
+        --rm \
+        --gpus ${GPULIST} \
+        --env WANDB_API_KEY \
+        --volume $(pwd):/workspace \
+        --name $(whoami)_$job_name \
+        $env_name $command"
+else
+    execution="$command"
+fi
+
 
 export SLURM_EXEC_COMMAND="$execution"
 start="bash $script_dir/start \$SLURM_JOB_ID \$SLURM_JOB_NAME \$SLURM_JOB_PARTITION"
@@ -93,6 +143,8 @@ echo "$_sbatch_partition" >> $script_path
 echo "$_sbatch_qos" >> $script_path
 echo "$_sbatch_gres" >> $script_path
 echo "$_sbatch_prefix" >> $script_path
+echo "$_sbatch_env_setup" >> $script_path
+echo "$_sbatch_env_show" >> $script_path
 
 echo "$start" >> $script_path
 echo "$execution" >> $script_path
