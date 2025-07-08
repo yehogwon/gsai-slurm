@@ -102,7 +102,11 @@ EOF
 elif [ "$env_type" == "venv" ]; then
     _sbatch_env_setup="source ~/.venv/bin/activate"
 else
-    _sbatch_env_setup=""
+    _sbatch_env_setup=$(cat <<'EOF'
+export UUIDLIST=$(nvidia-smi -L | cut -d '(' -f 2 | awk '{print$2}' | tr -d ")" | paste -s -d, -)
+export GPULIST=\"device=${UUIDLIST}\"
+EOF
+)
 fi
 
 _sbatch_env_show=$(cat <<'EOF'
@@ -114,12 +118,10 @@ EOF
 
 
 if [ "$env_type" == "docker" ]; then
-    UUIDLIST=$(nvidia-smi -L | cut -d '(' -f 2 | awk '{print$2}' | tr -d ")" | paste -s -d, -)
-    GPULIST=\"device=${UUIDLIST}\"
     execution="docker run \
         -it \
         --rm \
-        --gpus ${GPULIST} \
+        --gpus \$GPULIST \
         --env WANDB_API_KEY \
         --volume $(pwd):/workspace \
         --name $(whoami)_$job_name \
@@ -141,7 +143,6 @@ echo "$_sbatch_joberror" >> $script_path
 echo "$_sbatch_partition" >> $script_path
 echo "$_sbatch_qos" >> $script_path
 echo "$_sbatch_gres" >> $script_path
-echo "$_sbatch_time" >> $script_path
 echo "$_sbatch_prefix" >> $script_path
 echo "$_sbatch_env_setup" >> $script_path
 echo "$_sbatch_env_show" >> $script_path
