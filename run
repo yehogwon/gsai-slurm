@@ -2,7 +2,7 @@
 
 script_dir=$(dirname $(realpath $0))
 
-usage="Usage: bash $0 <venv|conda|docker> <env_name: only for conda and docker> <job_name> <partition> <n_gpus> <time> <command>"
+usage="Usage: bash $0 <venv|conda|docker|singularity> <env_name: only for conda and docker> <job_name> <partition> <n_gpus> <time> <command>"
 
 n_args=$#
 if [ $n_args -lt 5 ]; then
@@ -15,7 +15,7 @@ env_type=$1
 
 if [ "$env_type" == "venv" ]; then
     env_name=""
-elif [ "$env_type" == "conda" ] || [ "$env_type" == "docker" ]; then
+elif [ "$env_type" == "conda" ] || [ "$env_type" == "docker" ] || [ "$env_type" == "singularity" ]; then
     env_name=$2
     shift 1
 else
@@ -106,10 +106,15 @@ source ~/.venv/bin/activate
 which python
 EOF
 )
-else
+elif [ "$env_type" == "docker" ]; then
     _sbatch_env_setup=$(cat <<'EOF'
 export UUIDLIST=$(nvidia-smi -L | cut -d '(' -f 2 | awk '{print$2}' | tr -d ")" | paste -s -d, -)
 export GPULIST=\"device=${UUIDLIST}\"
+EOF
+)
+else
+    _sbatch_env_setup=$(cat <<'EOF'
+ml singularity
 EOF
 )
 fi
@@ -123,12 +128,16 @@ EOF
 
 if [ "$env_type" == "docker" ]; then
     execution="docker run \
-        -it \
         --rm \
         --gpus \$GPULIST \
         -e WANDB_API_KEY=$WANDB_API_KEY \
         --volume $(pwd):/workspace \
         --name $(whoami)_$job_name \
+        $env_name $command"
+elif [ "$env_type" == "singularity" ]; then
+    execution="singularity run \
+        --nv \
+        --bind $(pwd):/workspace \
         $env_name $command"
 else
     execution="$command"
