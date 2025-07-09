@@ -157,6 +157,7 @@ echo "$_sbatch_joberror" >> $script_path
 echo "$_sbatch_partition" >> $script_path
 echo "$_sbatch_qos" >> $script_path
 echo "$_sbatch_gres" >> $script_path
+echo "$_sbatch_time" >> $script_path
 echo "$_sbatch_prefix" >> $script_path
 echo "$_sbatch_env_setup" >> $script_path
 echo "$_sbatch_env_show" >> $script_path
