@@ -165,9 +165,9 @@ echo "$_sbatch_prefix" >> $script_path
 echo "$_sbatch_env_setup" >> $script_path
 echo "$_sbatch_env_show" >> $script_path
 
-echo "$start" >> $script_path
+# echo "$start" >> $script_path
 echo "$execution" >> $script_path
-echo "$done" >> $script_path
+# echo "$done" >> $script_path
 
 echo "Executing the following sbatch script:"
 cat $script_path
