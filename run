@@ -136,7 +136,7 @@ if [ "$env_type" == "docker" ]; then
         --volume $(pwd):/workspace \
         --name $(whoami)_$random_name \
         $env_name $command"
-    execution="$pull_execution \n $run_execution"
+    execution="$pull_execution && $run_execution"
 elif [ "$env_type" == "singularity" ]; then
     execution="singularity exec \
         --nv \
