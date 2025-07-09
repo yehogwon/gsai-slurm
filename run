@@ -127,12 +127,13 @@ EOF
 
 
 if [ "$env_type" == "docker" ]; then
+    random_name=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)
     execution="docker run \
         --rm \
         --gpus \$GPULIST \
         -e WANDB_API_KEY=$WANDB_API_KEY \
         --volume $(pwd):/workspace \
-        --name $(whoami)_$job_name \
+        --name $(whoami)_$random_name \
         $env_name $command"
 elif [ "$env_type" == "singularity" ]; then
     execution="singularity exec \
