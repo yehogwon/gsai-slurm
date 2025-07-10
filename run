@@ -110,6 +110,7 @@ elif [ "$env_type" == "docker" ]; then
     _sbatch_env_setup=$(cat <<'EOF'
 export UUIDLIST=$(nvidia-smi -L | cut -d '(' -f 2 | awk '{print$2}' | tr -d ")" | paste -s -d, -)
 export GPULIST=\"device=${UUIDLIST}\"
+export CPULIST=$(grep "Cpus_allowed_list" /proc/self/status | awk '{print $2}')
 EOF
 )
 else
@@ -132,6 +133,7 @@ if [ "$env_type" == "docker" ]; then
     run_execution="docker run \
         --rm \
         --gpus \$GPULIST \
+        --cpuset-cpus \$CPULIST \
         -e WANDB_API_KEY=$WANDB_API_KEY \
         --volume $(pwd):/workspace \
         --name $(whoami)_$random_name \
