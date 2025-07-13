@@ -111,6 +111,7 @@ elif [ "$env_type" == "docker" ]; then
 export UUIDLIST=$(nvidia-smi -L | cut -d '(' -f 2 | awk '{print$2}' | tr -d ")" | paste -s -d, -)
 export GPULIST=\"device=${UUIDLIST}\"
 export CPULIST=$(grep "Cpus_allowed_list" /proc/self/status | awk '{print $2}')
+export DOCKER_RUN='docker run --init'
 EOF
 )
 else
@@ -130,7 +131,7 @@ EOF
 if [ "$env_type" == "docker" ]; then
     random_name=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)
     pull_execution="docker pull $env_name"
-    run_execution="docker run \
+    run_execution="\$DOCKER_RUN \
         --rm \
         --gpus \$GPULIST \
         --cpuset-cpus \$CPULIST \
