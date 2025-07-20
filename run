@@ -130,16 +130,16 @@ EOF
 
 if [ "$env_type" == "docker" ]; then
     random_name=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)
-    pull_execution="docker pull $env_name"
-    run_execution="\$DOCKER_RUN \
+    execution="\$DOCKER_RUN \
         --rm \
+        --pull always \
+        --init \
         --gpus \$GPULIST \
         --cpuset-cpus \$CPULIST \
         -e WANDB_API_KEY=$WANDB_API_KEY \
         --volume $(pwd):/workspace \
         --name $(whoami)_$random_name \
         $env_name $command"
-    execution="$pull_execution && $run_execution"
 elif [ "$env_type" == "singularity" ]; then
     execution="singularity exec \
         --nv \
