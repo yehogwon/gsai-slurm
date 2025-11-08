@@ -45,8 +45,11 @@ EOF
 )
 
 _sbatch_jobname="#SBATCH --job-name=$job_name"
+###########################################
+#  NOTE: replace with your slurm log dir  #
 _sbatch_joboutput="#SBATCH --output=$HOME/slurm_log/out/$job_name.%A.out"
 _sbatch_joberror="#SBATCH --error=$HOME/slurm_log/err/$job_name.%A.err"
+###########################################
 
 
 if [ "$partition" == "hpgpu" ]; then
@@ -68,6 +71,7 @@ fi
 _sbatch_gres="#SBATCH --gres=gpu:$n_gpus"
 _sbatch_time="#SBATCH --time=$time"
 
+# TODO: check if n48 is working now
 _sbatch_prefix=$(cat <<'EOF'
 #SBATCH --nodes=1
 #SBATCH --exclude=n48
@@ -93,8 +97,8 @@ nvidia-smi -L
 EOF
 )
 
-#######################################
-#  replace with your conad env setup  #
+###########################################
+# NOTE: replace with your conda env setup #
 if [ "$env_type" == "conda" ]; then
     _sbatch_env_setup=$(cat <<'EOF'
 source ~/.conda_init.sh
@@ -102,7 +106,7 @@ conda activate $env_name
 which python
 EOF
 )
-#######################################
+###########################################
 elif [ "$env_type" == "venv" ]; then
     _sbatch_env_setup=$(cat <<'EOF'
 source .venv/bin/activate
