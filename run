@@ -150,11 +150,6 @@ else
     execution="cd $(pwd) && $command"
 fi
 
-
-export SLURM_EXEC_COMMAND="$execution"
-start="bash $script_dir/start \$SLURM_JOB_ID \$SLURM_JOB_NAME \$SLURM_JOB_PARTITION"
-done="bash $script_dir/done \$SLURM_JOB_ID \$SLURM_JOB_NAME \$SLURM_JOB_PARTITION \$?"
-
 script_path=$(mktemp)
 echo "$_sbatch_shebang" > $script_path
 echo "$_sbatch_jobname" >> $script_path
