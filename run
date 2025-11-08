@@ -147,7 +147,7 @@ elif [ "$env_type" == "singularity" ]; then
         --bind $(pwd):/workspace \
         $env_name $command"
 else
-    execution="$command"
+    execution="cd $(pwd) && $command"
 fi
 
 
