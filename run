@@ -93,6 +93,8 @@ nvidia-smi -L
 EOF
 )
 
+#######################################
+#  replace with your conad env setup  #
 if [ "$env_type" == "conda" ]; then
     _sbatch_env_setup=$(cat <<'EOF'
 source ~/.conda_init.sh
@@ -100,6 +102,7 @@ conda activate $env_name
 which python
 EOF
 )
+#######################################
 elif [ "$env_type" == "venv" ]; then
     _sbatch_env_setup=$(cat <<'EOF'
 source .venv/bin/activate
