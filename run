@@ -102,7 +102,7 @@ EOF
 )
 elif [ "$env_type" == "venv" ]; then
     _sbatch_env_setup=$(cat <<'EOF'
-source ~/.venv/bin/activate
+source .venv/bin/activate
 which python
 EOF
 )
