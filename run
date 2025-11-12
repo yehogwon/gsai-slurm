@@ -74,7 +74,6 @@ _sbatch_time="#SBATCH --time=$time"
 # TODO: check if n48 is working now
 _sbatch_prefix=$(cat <<'EOF'
 #SBATCH --nodes=1
-#SBATCH --exclude=n48
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 
