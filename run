@@ -2,10 +2,10 @@
 
 script_dir=$(dirname $(realpath $0))
 
-usage="Usage: bash $0 <venv|conda|docker|singularity|none> <env_name: only for conda and docker> <job_name> <partition> <n_gpus> <time> <command>"
+usage="Usage: bash $0 <venv|conda|docker|singularity|none> <env_name: only for conda and docker> <job_name> <partition> <n_gpus> <n_cpus> <time> <command>"
 
 n_args=$#
-if [ $n_args -lt 5 ]; then
+if [ $n_args -lt 7 ]; then
     echo "Error: Invalid arguments"
     echo $usage
     exit 1
@@ -27,8 +27,9 @@ fi
 job_name=$2
 partition=$3
 n_gpus=$4
-time=$5
-shift 5
+n_cpus=$5
+time=$6
+shift 6
 command=$@
 
 # check if the same jobname is running
@@ -70,12 +71,12 @@ fi
 
 _sbatch_gres="#SBATCH --gres=gpu:$n_gpus"
 _sbatch_time="#SBATCH --time=$time"
+_sbatch_cpu="#SBATCH --cpus-per-task=$n_cpus"
 
 # TODO: check if n48 is working now
 _sbatch_prefix=$(cat <<'EOF'
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
 
 cd $SLURM_SUBMIT_DIR
 echo "SLURM_JOB_NAME=$SLURM_JOB_NAME"
@@ -167,6 +168,7 @@ echo "$_sbatch_partition" >> $script_path
 echo "$_sbatch_qos" >> $script_path
 echo "$_sbatch_gres" >> $script_path
 echo "$_sbatch_time" >> $script_path
+echo "$_sbatch_cpu" >> $script_path
 echo "$_sbatch_prefix" >> $script_path
 echo "$_sbatch_env_setup" >> $script_path
 echo "$_sbatch_env_show" >> $script_path
