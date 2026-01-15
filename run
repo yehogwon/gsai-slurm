@@ -75,10 +75,12 @@ post_copy = []
 cleanup = []
 
 for precp_src, precp_dst in args.precopy:
+    os.makedirs(os.path.dirname(precp_dst), exist_ok=True)
     pre_copy.append(f'cp -r {precp_src} {precp_dst}')
     cleanup.append(f'rm -drf {precp_dst}')
 
 for postcp_src, postcp_dst in args.postcopy:
+    os.makedirs(os.path.dirname(postcp_dst), exist_ok=True)
     post_copy.append(f'cp -r {postcp_src} {postcp_dst}')
     cleanup.append(f'rm -drf {postcp_src}')
 
