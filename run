@@ -74,21 +74,25 @@ pre_copy = []
 post_copy = []
 cleanup = []
 
-for precp_src, precp_dst in args.precopy:
-    pre_copy.append(f'mkdir -p {os.path.dirname(precp_dst)}')
-    pre_copy.append(f'cp -r {precp_src} {precp_dst}')
+for precp_src, precp_dst in (args.precopy or []):
+    pre_copy.append(f'mkdir -p {precp_dst}')
+    pre_copy.append(f'tar -cf - -C {precp_src} . | tar -xf - -C {precp_dst}')
     cleanup.append(f'rm -drf {precp_dst}')
 
-for postcp_src, postcp_dst in args.postcopy:
-    post_copy.append(f'mkdir -p {os.path.dirname(postcp_dst)}')
-    post_copy.append(f'cp -r {postcp_src} {postcp_dst}')
+for postcp_src, postcp_dst in (args.postcopy or []):
+    post_copy.append(f'mkdir -p {postcp_dst}')
+    post_copy.append(f'tar -cf - -C {postcp_src} . | tar -xf - -C {postcp_dst}')
     cleanup.append(f'rm -drf {postcp_src}')
 
 command = ' '.join(args.command)
 sbatch_script.write(status_code + '\n\n')
+sbatch_script.write('echo " *** Precopying *** " \n\n')
 sbatch_script.write('\n'.join(pre_copy) + '\n\n')
+sbatch_script.write('echo " *** Executing command *** " \n\n')
 sbatch_script.write(run_prefix + command + '\n\n')
+sbatch_script.write('echo " *** Postcopying *** " \n\n')
 sbatch_script.write('\n'.join(post_copy) + '\n\n')
+sbatch_script.write('echo " *** Cleaning-up *** " \n\n')
 sbatch_script.write('\n'.join(cleanup) + '\n\n')
 sbatch_script.close()
 
