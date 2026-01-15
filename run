@@ -88,6 +88,7 @@ sbatch_script.write('\n'.join(pre_copy) + '\n\n')
 sbatch_script.write(run_prefix + command + '\n\n')
 sbatch_script.write('\n'.join(post_copy) + '\n\n')
 sbatch_script.write('\n'.join(cleanup) + '\n\n')
+sbatch_script.close()
 
 qos = ''
 if 'A100' in args.partition and 'PCI' not in args.partition:
