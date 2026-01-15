@@ -28,7 +28,7 @@ parser.add_argument('--time', type=str, required=True, help='Time limit for the 
 parser.add_argument('--precopy', nargs=2, action='append', metavar=('SRC', 'DST'), required=False, help='Specify a source and destination pair for file pre-copying')
 parser.add_argument('--postcopy', nargs=2, action='append', metavar=('SRC', 'DST'), required=False, help='Specify a source and destination pair for file post-copying')
 
-parser.add_argument('command', type=str, required=True, help='The command to execute')
+parser.add_argument('command', nargs='+', help='The command to execute')
 
 args = parser.parse_args()
 
@@ -82,8 +82,9 @@ for precp_src, precp_dst in args.precopy:
 for postcp_src, postcp_dst in args.postcopy:
     post_copy.append(f'cp -r {postcp_src} {postcp_dst}')
 
+command = ' '.join(args.command)
 sbatch_script.write('\n'.join(pre_copy) + '\n\n')
-sbatch_script.write(run_prefix + args.command + '\n\n')
+sbatch_script.write(run_prefix + command + '\n\n')
 sbatch_script.write('\n'.join(post_copy) + '\n\n')
 sbatch_script.write('\n'.join(cleanup) + '\n\n')
 
