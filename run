@@ -75,13 +75,21 @@ post_copy = []
 cleanup = []
 
 for precp_src, precp_dst in (args.precopy or []):
-    pre_copy.append(f'mkdir -p {precp_dst}')
-    pre_copy.append(f'tar -cf - -C {precp_src} . | tar -xf - -C {precp_dst}')
+    src_parent = os.path.dirname(precp_src)
+    src_name = os.path.basename(precp_src)
+    dst_parent = os.path.dirname(precp_dst)
+    dst_name = os.path.basename(precp_dst)
+    pre_copy.append(f'mkdir -p {dst_parent}')
+    pre_copy.append(f'tar -cf - -C {src_parent} {src_name} | tar -xf - -C {dst_parent} --transform "s|^{src_name}|{dst_name}|"')
     cleanup.append(f'rm -drf {precp_dst}')
 
 for postcp_src, postcp_dst in (args.postcopy or []):
-    post_copy.append(f'mkdir -p {postcp_dst}')
-    post_copy.append(f'tar -cf - -C {postcp_src} . | tar -xf - -C {postcp_dst}')
+    src_parent = os.path.dirname(postcp_src)
+    src_name = os.path.basename(postcp_src)
+    dst_parent = os.path.dirname(postcp_dst)
+    dst_name = os.path.basename(postcp_dst)
+    post_copy.append(f'mkdir -p {dst_parent}')
+    post_copy.append(f'tar -cf - -C {src_parent} {src_name} | tar -xf - -C {dst_parent} --transform "s|^{src_name}|{dst_name}|"')
     cleanup.append(f'rm -drf {postcp_src}')
 
 command = ' '.join(args.command)
