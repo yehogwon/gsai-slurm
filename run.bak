@@ -1,0 +1,181 @@
+#!/bin/bash
+
+script_dir=$(dirname $(realpath $0))
+
+usage="Usage: bash $0 <venv|conda|docker|singularity|none> <env_name: only for conda and docker> <job_name> <partition> <n_gpus> <n_cpus> <time> <command>"
+
+n_args=$#
+if [ $n_args -lt 7 ]; then
+    echo "Error: Invalid arguments"
+    echo $usage
+    exit 1
+fi
+
+env_type=$1
+
+if [ "$env_type" == "none" ] || [ "$env_type" == "venv" ]; then
+    env_name=""
+elif [ "$env_type" == "conda" ] || [ "$env_type" == "docker" ] || [ "$env_type" == "singularity" ]; then
+    env_name=$2
+    shift 1
+else
+    echo "Error: Invalid env_type: $env_type"
+    echo $usage
+    exit 1
+fi
+
+job_name=$2
+partition=$3
+n_gpus=$4
+n_cpus=$5
+time=$6
+shift 6
+command=$@
+
+# check if the same jobname is running
+if squeue -u $(whoami) --format="%j" | grep -q "^${job_name}$"; then
+    echo "Error: Job $job_name is already running"
+    exit 1
+fi
+
+
+_sbatch_shebang=$(cat <<'EOF'
+#!/bin/bash
+
+EOF
+)
+
+_sbatch_jobname="#SBATCH --job-name=$job_name"
+###########################################
+#  NOTE: replace with your slurm log dir  #
+_sbatch_joboutput="#SBATCH --output=$HOME/slurm_log/out/$job_name.%A.out"
+_sbatch_joberror="#SBATCH --error=$HOME/slurm_log/err/$job_name.%A.err"
+###########################################
+
+
+if [ "$partition" == "hpgpu" ]; then
+    _sbatch_partition="#SBATCH --partition=A100-40GB,4A100,A100-80GB"
+elif [ "$partition" == "normal" ]; then
+    _sbatch_partition="#SBATCH --partition=A100-pci,RTX6000ADA,L40S,A6000"
+elif [ "$partition" == "low" ]; then
+    _sbatch_partition="#SBATCH --partition=RTX6000ADA,L40S,A6000,3090"
+else
+    _sbatch_partition="#SBATCH --partition=$partition"
+fi
+
+if [[ "$partition" == *"A100-40GB"* || "$partition" == *"4A100"* || "$partition" == *"A100-80GB"* ]]; then
+    _sbatch_qos="#SBATCH --qos=hpgpu"
+else
+    _sbatch_qos=""
+fi
+
+_sbatch_gres="#SBATCH --gres=gpu:$n_gpus"
+_sbatch_time="#SBATCH --time=$time"
+_sbatch_cpu="#SBATCH --cpus-per-task=$n_cpus"
+
+# TODO: check if n48 is working now
+_sbatch_prefix=$(cat <<'EOF'
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+
+cd $SLURM_SUBMIT_DIR
+echo "SLURM_JOB_NAME=$SLURM_JOB_NAME"
+echo "SLURM_JOB_ID=$SLURM_JOB_ID"
+echo "SLURM_SUBMIT_DIR=$SLURM_SUBMIT_DIR"
+
+echo "HOSTNAME: $(hostname)"
+echo "DATE: $(date)"
+
+echo "%%%%%%%%%%%% GPU INFO %%%%%%%%%%%%"
+echo "CUDA_HOME=$CUDA_HOME"
+echo "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
+echo "CUDA_VERSION=$CUDA_VERSION"
+
+nvidia-smi
+nvidia-smi -L
+
+EOF
+)
+
+###########################################
+# NOTE: replace with your conda env setup #
+if [ "$env_type" == "conda" ]; then
+    _sbatch_env_setup=$(cat <<'EOF'
+source ~/.conda_init.sh
+conda activate $env_name
+which python
+EOF
+)
+###########################################
+elif [ "$env_type" == "venv" ]; then
+    _sbatch_env_setup=$(cat <<'EOF'
+source .venv/bin/activate
+which python
+EOF
+)
+elif [ "$env_type" == "docker" ]; then
+    _sbatch_env_setup=$(cat <<'EOF'
+export UUIDLIST=$(nvidia-smi -L | cut -d '(' -f 2 | awk '{print$2}' | tr -d ")" | paste -s -d, -)
+export GPULIST=\"device=${UUIDLIST}\"
+export CPULIST=$(grep "Cpus_allowed_list" /proc/self/status | awk '{print $2}')
+export DOCKER_RUN='docker run --init'
+EOF
+)
+elif [ "$env_type" == "singularity" ]; then
+    _sbatch_env_setup=$(cat <<'EOF'
+ml singularity
+EOF
+)
+else
+    _sbatch_env_setup=""
+fi
+
+_sbatch_env_show=$(cat <<'EOF'
+echo "%%%%%%%%%%%% ENVIRONMENT %%%%%%%%%%%%"
+env
+EOF
+)
+
+
+if [ "$env_type" == "docker" ]; then
+    random_name=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)
+    execution="\$DOCKER_RUN \
+        --rm \
+        --pull always \
+        --init \
+        --gpus \$GPULIST \
+        --cpuset-cpus \$CPULIST \
+        -e WANDB_API_KEY=$WANDB_API_KEY \
+        --volume $(pwd):/workspace \
+        --name $(whoami)_$random_name \
+        $env_name $command"
+elif [ "$env_type" == "singularity" ]; then
+    execution="singularity exec \
+        --nv \
+        --env WANDB_API_KEY=$WANDB_API_KEY \
+        --bind $(pwd):/workspace \
+        $env_name $command"
+else
+    execution="cd $(pwd) && $command"
+fi
+
+script_path=$(mktemp)
+echo "$_sbatch_shebang" > $script_path
+echo "$_sbatch_jobname" >> $script_path
+echo "$_sbatch_joboutput" >> $script_path
+echo "$_sbatch_joberror" >> $script_path
+echo "$_sbatch_partition" >> $script_path
+echo "$_sbatch_qos" >> $script_path
+echo "$_sbatch_gres" >> $script_path
+echo "$_sbatch_time" >> $script_path
+echo "$_sbatch_cpu" >> $script_path
+echo "$_sbatch_prefix" >> $script_path
+echo "$_sbatch_env_setup" >> $script_path
+echo "$_sbatch_env_show" >> $script_path
+
+# execution
+echo "$execution" >> $script_path
+
+echo "Executing the following sbatch script:"
+cat $script_path
+sbatch $script_path

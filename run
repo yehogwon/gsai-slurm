@@ -1,82 +1,39 @@
+#!/usr/bin/env python
+import sys
+sys.dont_write_bytecode = True
+
+import os
+import argparse
+import secrets
+import tempfile
+
+
+if __name__ != "__main__":
+    raise ImportError("This script cannot be imported as a module")
+
+parser = argparse.ArgumentParser(description='A one-liner for GSAI slurm sbatch scripts')
+
+env_group = parser.add_mutually_exclusive_group()
+env_group.add_argument('--venv', action='store_true', help='Use the default virtual environment')
+env_group.add_argument('--conda', type=str, help='Use a Conda environment with the given name')
+env_group.add_argument('--docker', type=str, help='Use a Docker image with the given name')
+env_group.add_argument('--singularity', type=str, help='Use a Singularity image with the given file name')
+
+parser.add_argument('--jobname', type=str, required=True, help='Name of the job')
+parser.add_argument('--partition', type=str, required=True, help='Slurm partition to use')
+parser.add_argument('--n_gpus', type=int, required=True, help='Number of GPUs to request')
+parser.add_argument('--n_cpus', type=int, required=True, help='Number of CPUs to request')
+parser.add_argument('--time', type=str, required=True, help='Time limit for the job (e.g., 01:00:00 for 1 hour)')
+
+parser.add_argument('--precopy', nargs=2, action='append', metavar=('SRC', 'DST'), required=False, help='Specify a source and destination pair for file pre-copying')
+parser.add_argument('--postcopy', nargs=2, action='append', metavar=('SRC', 'DST'), required=False, help='Specify a source and destination pair for file post-copying')
+
+parser.add_argument('command', type=str, required=True, help='The command to execute')
+
+args = parser.parse_args()
+
+status_code = """
 #!/bin/bash
-
-script_dir=$(dirname $(realpath $0))
-
-usage="Usage: bash $0 <venv|conda|docker|singularity|none> <env_name: only for conda and docker> <job_name> <partition> <n_gpus> <n_cpus> <time> <command>"
-
-n_args=$#
-if [ $n_args -lt 7 ]; then
-    echo "Error: Invalid arguments"
-    echo $usage
-    exit 1
-fi
-
-env_type=$1
-
-if [ "$env_type" == "none" ] || [ "$env_type" == "venv" ]; then
-    env_name=""
-elif [ "$env_type" == "conda" ] || [ "$env_type" == "docker" ] || [ "$env_type" == "singularity" ]; then
-    env_name=$2
-    shift 1
-else
-    echo "Error: Invalid env_type: $env_type"
-    echo $usage
-    exit 1
-fi
-
-job_name=$2
-partition=$3
-n_gpus=$4
-n_cpus=$5
-time=$6
-shift 6
-command=$@
-
-# check if the same jobname is running
-if squeue -u $(whoami) --format="%j" | grep -q "^${job_name}$"; then
-    echo "Error: Job $job_name is already running"
-    exit 1
-fi
-
-
-_sbatch_shebang=$(cat <<'EOF'
-#!/bin/bash
-
-EOF
-)
-
-_sbatch_jobname="#SBATCH --job-name=$job_name"
-###########################################
-#  NOTE: replace with your slurm log dir  #
-_sbatch_joboutput="#SBATCH --output=$HOME/slurm_log/out/$job_name.%A.out"
-_sbatch_joberror="#SBATCH --error=$HOME/slurm_log/err/$job_name.%A.err"
-###########################################
-
-
-if [ "$partition" == "hpgpu" ]; then
-    _sbatch_partition="#SBATCH --partition=A100-40GB,4A100,A100-80GB"
-elif [ "$partition" == "normal" ]; then
-    _sbatch_partition="#SBATCH --partition=A100-pci,RTX6000ADA,L40S,A6000"
-elif [ "$partition" == "low" ]; then
-    _sbatch_partition="#SBATCH --partition=RTX6000ADA,L40S,A6000,3090"
-else
-    _sbatch_partition="#SBATCH --partition=$partition"
-fi
-
-if [[ "$partition" == *"A100-40GB"* || "$partition" == *"4A100"* || "$partition" == *"A100-80GB"* ]]; then
-    _sbatch_qos="#SBATCH --qos=hpgpu"
-else
-    _sbatch_qos=""
-fi
-
-_sbatch_gres="#SBATCH --gres=gpu:$n_gpus"
-_sbatch_time="#SBATCH --time=$time"
-_sbatch_cpu="#SBATCH --cpus-per-task=$n_cpus"
-
-# TODO: check if n48 is working now
-_sbatch_prefix=$(cat <<'EOF'
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
 
 cd $SLURM_SUBMIT_DIR
 echo "SLURM_JOB_NAME=$SLURM_JOB_NAME"
@@ -93,89 +50,49 @@ echo "CUDA_VERSION=$CUDA_VERSION"
 
 nvidia-smi
 nvidia-smi -L
+"""
 
-EOF
-)
+sbatch_script = tempfile.NamedTemporaryFile(mode='w', delete=False)
+sbatch_script.write(status_code + '\n\n')
 
-###########################################
-# NOTE: replace with your conda env setup #
-if [ "$env_type" == "conda" ]; then
-    _sbatch_env_setup=$(cat <<'EOF'
-source ~/.conda_init.sh
-conda activate $env_name
-which python
-EOF
-)
-###########################################
-elif [ "$env_type" == "venv" ]; then
-    _sbatch_env_setup=$(cat <<'EOF'
-source .venv/bin/activate
-which python
-EOF
-)
-elif [ "$env_type" == "docker" ]; then
-    _sbatch_env_setup=$(cat <<'EOF'
-export UUIDLIST=$(nvidia-smi -L | cut -d '(' -f 2 | awk '{print$2}' | tr -d ")" | paste -s -d, -)
-export GPULIST=\"device=${UUIDLIST}\"
-export CPULIST=$(grep "Cpus_allowed_list" /proc/self/status | awk '{print $2}')
-export DOCKER_RUN='docker run --init'
-EOF
-)
-elif [ "$env_type" == "singularity" ]; then
-    _sbatch_env_setup=$(cat <<'EOF'
-ml singularity
-EOF
-)
-else
-    _sbatch_env_setup=""
-fi
+if args.venv:
+    run_prefix = 'source .venv/bin/activate; which python; '
+elif args.conda:
+    run_prefix = f'conda activate {args.conda}; which python; '
+elif args.docker:
+    _docker_setup = 'export UUIDLIST=$(nvidia-smi -L | cut -d \'(\' -f 2 | awk \'{print$2}\' | tr -d ")" | paste -s -d, -); export GPULIST=\"device=${UUIDLIST}\"; export CPULIST=$(grep "Cpus_allowed_list" /proc/self/status | awk \'{print $2}\'); '
+    _docker_rand = secrets.token_urlsafe(20)
+    run_prefix = f'docker run --rm --pull always --init --gpus $GPULIST --cpuset-cpus $CPULIST -e WANDB_API_KEY=$WANDB_API_KEY --volume $(pwd):/workspace --name $(whoami)_{_docker_rand} {args.docker} '
+    run_prefix = _docker_setup + run_prefix
+elif args.singularity:
+    _singularity_setup = 'ml singularity; '
+    run_prefix = f'singularity exec --nv --env WANDB_API_KEY=$WANDB_API_KEY --bind $(pwd):/workspace {args.singularity} '
+    run_prefix = _singularity_setup + run_prefix
+else:
+    run_prefix = ''
 
-_sbatch_env_show=$(cat <<'EOF'
-echo "%%%%%%%%%%%% ENVIRONMENT %%%%%%%%%%%%"
-env
-EOF
-)
+pre_copy = []
+post_copy = []
+cleanup = []
 
+for precp_src, precp_dst in args.precopy:
+    pre_copy.append(f'cp -r {precp_src} {precp_dst}')
+    cleanup.append(f'rm -drf {precp_dst}')
 
-if [ "$env_type" == "docker" ]; then
-    random_name=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)
-    execution="\$DOCKER_RUN \
-        --rm \
-        --pull always \
-        --init \
-        --gpus \$GPULIST \
-        --cpuset-cpus \$CPULIST \
-        -e WANDB_API_KEY=$WANDB_API_KEY \
-        --volume $(pwd):/workspace \
-        --name $(whoami)_$random_name \
-        $env_name $command"
-elif [ "$env_type" == "singularity" ]; then
-    execution="singularity exec \
-        --nv \
-        --env WANDB_API_KEY=$WANDB_API_KEY \
-        --bind $(pwd):/workspace \
-        $env_name $command"
-else
-    execution="cd $(pwd) && $command"
-fi
+for postcp_src, postcp_dst in args.postcopy:
+    post_copy.append(f'cp -r {postcp_src} {postcp_dst}')
 
-script_path=$(mktemp)
-echo "$_sbatch_shebang" > $script_path
-echo "$_sbatch_jobname" >> $script_path
-echo "$_sbatch_joboutput" >> $script_path
-echo "$_sbatch_joberror" >> $script_path
-echo "$_sbatch_partition" >> $script_path
-echo "$_sbatch_qos" >> $script_path
-echo "$_sbatch_gres" >> $script_path
-echo "$_sbatch_time" >> $script_path
-echo "$_sbatch_cpu" >> $script_path
-echo "$_sbatch_prefix" >> $script_path
-echo "$_sbatch_env_setup" >> $script_path
-echo "$_sbatch_env_show" >> $script_path
+sbatch_script.write('\n'.join(pre_copy) + '\n\n')
+sbatch_script.write(run_prefix + args.command + '\n\n')
+sbatch_script.write('\n'.join(post_copy) + '\n\n')
+sbatch_script.write('\n'.join(cleanup) + '\n\n')
 
-# execution
-echo "$execution" >> $script_path
+qos = ''
+if 'A100' in args.partition and 'PCI' not in args.partition:
+    qos = '--qos=hpgpu'
 
-echo "Executing the following sbatch script:"
-cat $script_path
-sbatch $script_path
+stdout_path = f'$HOME/slurm_log/out/$job_name.{args.jobname}.out'
+stderr_path = f'$HOME/slurm_log/err/$job_name.{args.jobname}.err'
+sbatch_command = f'sbatch --job-name={args.jobname} --out {stdout_path} --err {stderr_path} --partition={args.partition} -N=1 -n=1 --gres=gpu:{args.n_gpus} {qos} --cpus-per-task={args.n_cpus} --time={args.time} {sbatch_script.name}'
+
+os.system(sbatch_command)
