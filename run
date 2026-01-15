@@ -53,7 +53,7 @@ nvidia-smi -L
 """
 
 sbatch_script = tempfile.NamedTemporaryFile(mode='w', delete=False)
-sbatch_script.write(status_code + '\n\n')
+print('Creating sbatch script at:', sbatch_script.name)
 
 if args.venv:
     run_prefix = 'source .venv/bin/activate; which python; '
@@ -84,6 +84,7 @@ for postcp_src, postcp_dst in args.postcopy:
     cleanup.append(f'rm -drf {postcp_src}')
 
 command = ' '.join(args.command)
+sbatch_script.write(status_code + '\n\n')
 sbatch_script.write('\n'.join(pre_copy) + '\n\n')
 sbatch_script.write(run_prefix + command + '\n\n')
 sbatch_script.write('\n'.join(post_copy) + '\n\n')
