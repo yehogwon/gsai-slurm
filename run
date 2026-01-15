@@ -95,6 +95,6 @@ if 'A100' in args.partition and 'PCI' not in args.partition:
 
 stdout_path = f'$HOME/slurm_log/out/$job_name.{args.jobname}.out'
 stderr_path = f'$HOME/slurm_log/err/$job_name.{args.jobname}.err'
-sbatch_command = f'sbatch --job-name={args.jobname} --out {stdout_path} --err {stderr_path} --partition={args.partition} -N=1 -n=1 --gres=gpu:{args.n_gpus} {qos} --cpus-per-task={args.n_cpus} --time={args.time} {sbatch_script.name}'
+sbatch_command = f'sbatch --job-name={args.jobname} --out {stdout_path} --err {stderr_path} --partition={args.partition} -N 1 -n 1 --gres=gpu:{args.n_gpus} {qos} --cpus-per-task={args.n_cpus} --time={args.time} {sbatch_script.name}'
 
 os.system(sbatch_command)
