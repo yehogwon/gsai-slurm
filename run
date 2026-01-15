@@ -81,6 +81,7 @@ for precp_src, precp_dst in args.precopy:
 
 for postcp_src, postcp_dst in args.postcopy:
     post_copy.append(f'cp -r {postcp_src} {postcp_dst}')
+    cleanup.append(f'rm -drf {postcp_src}')
 
 command = ' '.join(args.command)
 sbatch_script.write('\n'.join(pre_copy) + '\n\n')
