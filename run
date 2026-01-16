@@ -174,9 +174,7 @@ def write_sbatch_script(args: argparse.Namespace) -> str:
         run_prefix = f'docker run --rm --pull always --init --gpus $GPULIST --cpuset-cpus $CPULIST -e WANDB_API_KEY=$WANDB_API_KEY --volume $(pwd):/workspace --name $(whoami)_{_docker_rand} {args.docker} '
         run_prefix = join_newline([_docker_setup, run_prefix])
     elif args.singularity:
-        _singularity_setup = 'ml singularity; '
         run_prefix = f'singularity exec --nv --env WANDB_API_KEY=$WANDB_API_KEY --bind $(pwd):/workspace {args.singularity} '
-        run_prefix = _singularity_setup + run_prefix
     else:
         run_prefix = ''
 
