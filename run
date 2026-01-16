@@ -169,3 +169,7 @@ def execute_sbatch(script_path: str, args: argparse.Namespace):
     print(sbatch_command)
 
     subprocess.run(sbatch_command, shell=True)
+
+args = parse_args()
+path = write_sbatch_script(args)
+execute_sbatch(path, args)
