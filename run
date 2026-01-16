@@ -32,7 +32,8 @@ def print_green(*args, **kwargs):
 
 
 def join_newline(lst, num_newlines=1):
-    return ('\n' * num_newlines).join(lst)
+    sep = '\n' * num_newlines if num_newlines > 0 else ' '
+    return sep.join(lst)
 
 
 def parse_args() -> argparse.Namespace:
@@ -130,7 +131,7 @@ def write_sbatch_script(args: argparse.Namespace) -> str:
     script_contents.append('echo " *** Precopying *** "')
     script_contents.append(join_newline(pre_copy))
     script_contents.append('echo " *** Executing command *** "')
-    script_contents.append(run_prefix + ' '.join(args.command))
+    script_contents.append(run_prefix + join_newline(args.command, num_newlines=0))
     script_contents.append('echo " *** Postcopying *** "')
     script_contents.append(join_newline(post_copy))
     script_contents.append('echo " *** Cleaning-up *** "')
@@ -162,7 +163,7 @@ def execute_sbatch(script_path: str, args: argparse.Namespace):
     if 'A100' in args.partition and 'PCI' not in args.partition:
         sbatch_args.append('qos', 'hpgpu')
 
-    sbatch_args = ' '.join([f'{k} {v}' for k, v in sbatch_args])
+    sbatch_args = join_newline([f'{k} {v}' for k, v in sbatch_args], num_newlines=0)
     sbatch_command = f'sbatch {sbatch_args} {script_path}'
 
     print_green('Running the following sbatch command:')
