@@ -82,6 +82,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--n_gpus', type=int, required=True, help='Number of GPUs to request')
     parser.add_argument('--n_cpus', type=int, required=True, help='Number of CPUs to request')
     parser.add_argument('--time', type=str, required=True, help='Time limit for the job (e.g., 01:00:00 for 1 hour)')
+    parser.add_argument('--mem', type=str, default=0, help='Memory to request (0 for default; e.g., 16G)')
 
     parser.add_argument('--precopy', nargs=2, action='append', metavar=('NAME', 'SRC'), required=False, default=[], help='Specify a source and destination pair for file pre-copying')
     parser.add_argument('--postcopy', nargs=2, action='append', metavar=('NAME', 'DST'), required=False, default=[], help='Specify a source and destination pair for file post-copying')
@@ -229,18 +230,24 @@ def write_sbatch_script(args: argparse.Namespace) -> str:
 
 def execute_sbatch(script_path: str, args: argparse.Namespace):
     sbatch_args = []
+
+    # required args
     sbatch_args.append(('--job-name', args.jobname))
     sbatch_args.append(('--out', pjoin(args.stdout, '%x.%j.out')))  # jobname.jobid.out
     sbatch_args.append(('--err', pjoin(args.stderr, '%x.%j.err')))  # jobname.jobid.err
     sbatch_args.append(('--partition', args.partition))
-    if args.nodelist:
-        sbatch_args.append(('--nodelist', args.nodelist))
     sbatch_args.append(('--nodes', '1'))  # TODO: support multi-node distributed jobs
     sbatch_args.append(('--ntasks', '1'))
     sbatch_args.append(('--gres', f'gpu:{args.n_gpus}'))
     sbatch_args.append(('--cpus-per-task', args.n_cpus))
     sbatch_args.append(('--time', args.time))
     sbatch_args.append(('--signal', f'SIGTERM@{CLEANUP_GRACE_PERIOD}'))
+
+    # optional args
+    if args.nodelist:
+        sbatch_args.append(('--nodelist', args.nodelist))
+    if args.mem != 0:
+        sbatch_args.append(('--mem', args.mem))
 
     if args.n_gpus == 0:
         sbatch_args.append(('--qos', 'nogpu'))
