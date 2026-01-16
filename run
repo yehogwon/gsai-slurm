@@ -60,6 +60,7 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument('--jobname', type=str, required=True, help='Name of the job')
     parser.add_argument('--partition', type=str, required=True, help='Slurm partition to use')
+    parser.add_argument('--nodelist', type=str, default=None, help='Specific node list to use (optional)')
     parser.add_argument('--n_gpus', type=int, required=True, help='Number of GPUs to request')
     parser.add_argument('--n_cpus', type=int, required=True, help='Number of CPUs to request')
     parser.add_argument('--time', type=str, required=True, help='Time limit for the job (e.g., 01:00:00 for 1 hour)')
@@ -202,6 +203,8 @@ def execute_sbatch(script_path: str, args: argparse.Namespace):
     sbatch_args.append(('--out', f'$HOME/slurm_log/out/$job_name.{args.jobname}.out'))
     sbatch_args.append(('--err', f'$HOME/slurm_log/err/$job_name.{args.jobname}.err'))
     sbatch_args.append(('--partition', args.partition))
+    if args.nodelist:
+        sbatch_args.append(('--nodelist', args.nodelist))
     sbatch_args.append(('--nodes', '1'))  # TODO: support multi-node distributed jobs
     sbatch_args.append(('--ntasks', '1'))
     sbatch_args.append(('--gres', f'gpu:{args.n_gpus}'))
