@@ -182,7 +182,9 @@ def write_sbatch_script(args: argparse.Namespace) -> str:
     precopy, postcopy, cleanup, copy_lookup = copy_cleanups(args)
     parsed_command = join_newline(args.command, num_newlines=0)
     for name, path in copy_lookup.items():
-        parsed_command = parsed_command.replace('{{' + name + '}}', f'"{path}"')
+        if ' ' in path:
+            raise_die(f'Error: Path "{path}" for name "{name}" contains spaces, which is not expected.')
+        parsed_command = parsed_command.replace('{{' + name + '}}', f'{path}')
     exec_cmd = run_prefix + parsed_command
 
     script_contents = []
