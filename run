@@ -14,7 +14,7 @@ import secrets
 
 
 SLURM_LOCAL_DATA = '/local-data/user-data/$USER/$SLURM_JOB_ID'
-CLEANUP_GRACE_PERIOD = 60  # seconds
+CLEANUP_GRACE_PERIOD = 120  # seconds
 
 
 def print_blue(*args, **kwargs):
@@ -119,13 +119,15 @@ def copy_cleanups(args: argparse.Namespace) -> tuple[str, str, str, dict[str, st
         _post_copy.append(f'tar -cf - -C "{path}" . | tar -xf - -C "{postcp_dst}"')
         post_copy.extend(_post_copy)
     
+    # EXIT trap for cleanup - runs on any exit (normal, error, or after signal)
     trap_cleanup = join_newline([
         'cleanup__() {',
         '    echo " *** Running cleanup... *** "',
     ] + [f'    {line}' for line in cleanup] + [
         '    echo " *** Cleanup complete *** "',
         '}',
-        f'trap cleanup__ SIGTERM SIGINT EXIT'
+        'trap cleanup__ EXIT',
+        'trap \'echo " *** Signal received, will postcopy after command exits... *** "\' SIGTERM SIGINT',
     ])
 
     return (
@@ -186,13 +188,16 @@ def write_sbatch_script(args: argparse.Namespace) -> str:
 
     script_contents = []
     script_contents.append(status_code)
-    script_contents.append(cleanup)  # trap cleanup
+    script_contents.append(cleanup)  # trap setup
     script_contents.append('echo " *** Precopying *** "')
     script_contents.append(precopy)
     script_contents.append('echo " *** Executing command *** "')
     script_contents.append(exec_cmd)
+    script_contents.append('CMD_EXIT_CODE=$?')  # capture exit code
+    script_contents.append('echo " *** Command exited with code $CMD_EXIT_CODE *** "')
     script_contents.append('echo " *** Postcopying *** "')
     script_contents.append(postcopy)
+    script_contents.append('exit $CMD_EXIT_CODE')  # preserve original exit code
     
     script_contents = join_newline(script_contents, num_newlines=2)
     sbatch_script.write(script_contents)
