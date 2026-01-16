@@ -118,7 +118,7 @@ def copy_cleanups(args: argparse.Namespace) -> tuple[str, str, str, dict[str, st
         _post_copy.append(f'mkdir -p "{postcp_dst}"')
         _post_copy.append(f'tar -cf - -C "{path}" . | tar -xf - -C "{postcp_dst}"')
         post_copy.extend(_post_copy)
-    
+
     # EXIT trap for cleanup - runs on any exit (normal, error, or after signal)
     trap_cleanup = join_newline([
         'cleanup__() {',
@@ -179,7 +179,7 @@ def write_sbatch_script(args: argparse.Namespace) -> str:
         run_prefix = _singularity_setup + run_prefix
     else:
         run_prefix = ''
-    
+
     precopy, postcopy, cleanup, copy_lookup = copy_cleanups(args)
     parsed_command = join_newline(args.command, num_newlines=0)
     for name, path in copy_lookup.items():
@@ -198,7 +198,7 @@ def write_sbatch_script(args: argparse.Namespace) -> str:
     script_contents.append('echo " *** Postcopying *** "')
     script_contents.append(postcopy)
     script_contents.append('exit $CMD_EXIT_CODE')  # preserve original exit code
-    
+
     script_contents = join_newline(script_contents, num_newlines=2)
     sbatch_script.write(script_contents)
     sbatch_script.close()
