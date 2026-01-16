@@ -68,7 +68,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--precopy', nargs=2, action='append', metavar=('NAME', 'SRC'), required=False, default=[], help='Specify a source and destination pair for file pre-copying')
     parser.add_argument('--postcopy', nargs=2, action='append', metavar=('NAME', 'DST'), required=False, default=[], help='Specify a source and destination pair for file post-copying')
 
-    parser.add_argument('command', nargs='+', help='The command to execute')
+    parser.add_argument('command', nargs=argparse.REMAINDER, help='The command to execute')
 
     args = parser.parse_args()
     return args
