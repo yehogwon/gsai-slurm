@@ -96,12 +96,13 @@ def copy_cleanups(args: argparse.Namespace) -> tuple[str, str, str, dict[str, st
         if not os.path.exists(precp_src):
             raise_die(f'Precopy source path does not exist: {precp_src}')
 
+        src_parent, src_name = os.path.split(precp_src)
         path = pjoin(precp_prefix, randomize())
-        mappings[precp_name] = pjoin(path, os.path.basename(precp_src))
+        mappings[precp_name] = pjoin(path, src_name)
 
         _pre_copy = []
         _pre_copy.append(f'mkdir -p "{path}"')
-        _pre_copy.append(f'tar -cf - -C "{precp_src}" . | tar -xf - -C "{path}"')
+        _pre_copy.append(f'tar -cf - -C "{src_parent}" "{src_name}" | tar -xf - -C "{path}"')
         pre_copy.extend(_pre_copy)
 
     for postcp_name, postcp_dst in (args.postcopy):
