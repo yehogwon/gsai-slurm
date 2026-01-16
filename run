@@ -167,9 +167,9 @@ def write_sbatch_script(args: argparse.Namespace) -> str:
         run_prefix = ''
     
     precopy, postcopy, cleanup, copy_lookup = copy_cleanups(args)
-    command = join_newline(args.command, num_newlines=0)
+    parsed_command = join_newline(args.command, num_newlines=0)
     for name, path in copy_lookup.items():
-        parsed_command = command.replace('{{' + name + '}}', f'"{path}"')
+        parsed_command = parsed_command.replace('{{' + name + '}}', f'"{path}"')
     exec_cmd = run_prefix + parsed_command
 
     script_contents = []
