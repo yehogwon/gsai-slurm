@@ -162,6 +162,7 @@ def write_sbatch_script(args: argparse.Namespace) -> str:
     if args.venv:
         run_prefix = 'source .venv/bin/activate; which python; '
     elif args.conda:
+        # FIXME `conda activate` requires initialization of shell environment
         run_prefix = f'conda activate {args.conda}; which python; '
     elif args.docker:
         # _docker_setup = '  '
@@ -224,8 +225,10 @@ def execute_sbatch(script_path: str, args: argparse.Namespace):
     sbatch_args.append(('--time', args.time))
     sbatch_args.append(('--signal', f'SIGTERM@{CLEANUP_GRACE_PERIOD}'))
 
-    if 'A100' in args.partition and 'PCI' not in args.partition:
-        sbatch_args.append(('qos', 'hpgpu'))
+    if args.n_gpus == 0:
+        sbatch_args.append('--qos', 'nogpu')
+    elif 'A100' in args.partition and 'PCI' not in args.partition:
+        sbatch_args.append(('--qos', 'hpgpu'))
 
     sbatch_args = join_newline([f'{k} {v}' for k, v in sbatch_args], num_newlines=0)
     sbatch_command = f'sbatch {sbatch_args} {script_path}'
