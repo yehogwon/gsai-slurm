@@ -77,8 +77,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def copy_cleanups(args: argparse.Namespace) -> tuple[str, str, str, dict[str, str]]:
-    pre_copy = []
-    post_copy = []
+    preproc = []
+    postproc = []
     cleanup = []
     mappings = {}
 
@@ -89,9 +89,9 @@ def copy_cleanups(args: argparse.Namespace) -> tuple[str, str, str, dict[str, st
     precp_prefix = pjoin(SLURM_LOCAL_DATA, 'PRE')
     postcp_prefix = pjoin(SLURM_LOCAL_DATA, 'POST')
 
-    pre_copy.append(f'mkdir -p "{precp_prefix}"')
+    preproc.append(f'mkdir -p "{precp_prefix}"')
     cleanup.append(f'rm -drf "{SLURM_LOCAL_DATA}"')
-    post_copy.append(f'mkdir -p "{postcp_prefix}"')
+    postproc.append(f'mkdir -p "{postcp_prefix}"')
 
     for precp_name, precp_src in (args.precopy):
         precp_src = precp_src.rstrip('/')
@@ -103,10 +103,8 @@ def copy_cleanups(args: argparse.Namespace) -> tuple[str, str, str, dict[str, st
         path = pjoin(precp_prefix, randomize())
         mappings[precp_name] = pjoin(path, src_name)
 
-        _pre_copy = []
-        _pre_copy.append(f'mkdir -p "{path}"')
-        _pre_copy.append(f'tar -cf - -C "{src_parent}" "{src_name}" | tar -xf - -C "{path}"')
-        pre_copy.extend(_pre_copy)
+        preproc.append(f'mkdir -p "{path}"')
+        preproc.append(f'tar -cf - -C "{src_parent}" "{src_name}" | tar -xf - -C "{path}"')
 
     for postcp_name, postcp_dst in (args.postcopy):
         postcp_dst = postcp_dst.rstrip('/')
@@ -114,10 +112,8 @@ def copy_cleanups(args: argparse.Namespace) -> tuple[str, str, str, dict[str, st
         path = pjoin(postcp_prefix, randomize())
         mappings[postcp_name] = path
 
-        _post_copy = []
-        _post_copy.append(f'mkdir -p "{postcp_dst}"')
-        _post_copy.append(f'tar -cf - -C "{path}" . | tar -xf - -C "{postcp_dst}"')
-        post_copy.extend(_post_copy)
+        preproc.append(f'mkdir -p "{postcp_dst}"')
+        postproc.append(f'tar -cf - -C "{path}" . | tar -xf - -C "{postcp_dst}"')
 
     # EXIT trap for cleanup - runs on any exit (normal, error, or after signal)
     trap_cleanup = join_newline([
@@ -131,8 +127,8 @@ def copy_cleanups(args: argparse.Namespace) -> tuple[str, str, str, dict[str, st
     ])
 
     return (
-        join_newline(pre_copy),
-        join_newline(post_copy),
+        join_newline(preproc),
+        join_newline(postproc),
         trap_cleanup,
         mappings
     )
