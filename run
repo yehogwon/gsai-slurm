@@ -112,7 +112,8 @@ def copy_cleanups(args: argparse.Namespace) -> tuple[str, str, str, dict[str, st
         path = pjoin(postcp_prefix, randomize())
         mappings[postcp_name] = path
 
-        preproc.append(f'mkdir -p "{postcp_dst}"')
+        preproc.append(f'mkdir -p "{path}"')
+        postproc.append(f'mkdir -p "{postcp_dst}"')
         postproc.append(f'tar -cf - -C "{path}" . | tar -xf - -C "{postcp_dst}"')
 
     # EXIT trap for cleanup - runs on any exit (normal, error, or after signal)
