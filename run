@@ -97,13 +97,13 @@ def copy_cleanups(args: argparse.Namespace) -> tuple[str, str, str, dict[str, st
             raise_die(f'Precopy source path does not exist: {precp_src}')
 
         path = pjoin(precp_prefix, randomize())
-        mappings[precp_name] = path
+        mappings[precp_name] = pjoin(path, os.path.basename(precp_src))
 
         _pre_copy = []
         _pre_copy.append(f'mkdir -p "{path}"')
         _pre_copy.append(f'tar -cf - -C "{precp_src}" . | tar -xf - -C "{path}"')
         pre_copy.extend(_pre_copy)
-    
+
     for postcp_name, postcp_dst in (args.postcopy or []):
         postcp_dst = postcp_dst.rstrip('/')
 
@@ -111,7 +111,7 @@ def copy_cleanups(args: argparse.Namespace) -> tuple[str, str, str, dict[str, st
         mappings[postcp_name] = path
 
         _post_copy = []
-        _post_copy.append(f'mkdir -p "{path}"')
+        _post_copy.append(f'mkdir -p "{postcp_dst}"')
         _post_copy.append(f'tar -cf - -C "{path}" . | tar -xf - -C "{postcp_dst}"')
         post_copy.extend(_post_copy)
 
@@ -194,6 +194,7 @@ def write_sbatch_script(args: argparse.Namespace) -> str:
     return script_path
 
 
+# TODO: use an early singal (using --signal) to clean up in case of job termination
 def execute_sbatch(script_path: str, args: argparse.Namespace):
     sbatch_args = []
     sbatch_args.append(('--job-name', args.jobname))
