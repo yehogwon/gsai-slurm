@@ -64,8 +64,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--n_cpus', type=int, required=True, help='Number of CPUs to request')
     parser.add_argument('--time', type=str, required=True, help='Time limit for the job (e.g., 01:00:00 for 1 hour)')
 
-    parser.add_argument('--precopy', nargs=2, action='append', metavar=('NAME', 'SRC'), required=False, help='Specify a source and destination pair for file pre-copying')
-    parser.add_argument('--postcopy', nargs=2, action='append', metavar=('NAME', 'DST'), required=False, help='Specify a source and destination pair for file post-copying')
+    parser.add_argument('--precopy', nargs=2, action='append', metavar=('NAME', 'SRC'), required=False, default=[], help='Specify a source and destination pair for file pre-copying')
+    parser.add_argument('--postcopy', nargs=2, action='append', metavar=('NAME', 'DST'), required=False, default=[], help='Specify a source and destination pair for file post-copying')
 
     parser.add_argument('command', nargs='+', help='The command to execute')
 
@@ -79,7 +79,7 @@ def copy_cleanups(args: argparse.Namespace) -> tuple[str, str, str, dict[str, st
     cleanup = []
     mappings = {}
 
-    _names = [n for n, _, _ in (args.precopy or [])] + [n for n, _, _ in (args.postcopy or [])]
+    _names = [n for n, _ in (args.precopy + args.postcopy)]
     if len(_names) != len(set(_names)):
         raise_die('Error: Duplicate names found in precopy/postcopy arguments')
 
@@ -90,7 +90,7 @@ def copy_cleanups(args: argparse.Namespace) -> tuple[str, str, str, dict[str, st
     cleanup.append(f'rm -drf "{SLURM_LOCAL_DATA}"')
     post_copy.append(f'mkdir -p "{postcp_prefix}"')
 
-    for precp_name, precp_src in (args.precopy or []):
+    for precp_name, precp_src in (args.precopy):
         precp_src = precp_src.rstrip('/')
 
         if not os.path.exists(precp_src):
@@ -104,7 +104,7 @@ def copy_cleanups(args: argparse.Namespace) -> tuple[str, str, str, dict[str, st
         _pre_copy.append(f'tar -cf - -C "{precp_src}" . | tar -xf - -C "{path}"')
         pre_copy.extend(_pre_copy)
 
-    for postcp_name, postcp_dst in (args.postcopy or []):
+    for postcp_name, postcp_dst in (args.postcopy):
         postcp_dst = postcp_dst.rstrip('/')
 
         path = pjoin(postcp_prefix, randomize())
