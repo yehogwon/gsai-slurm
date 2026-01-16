@@ -49,6 +49,22 @@ def join_newline(lst, num_newlines=1):
     return sep.join(lst)
 
 
+def _find_conda_init() -> str:
+    CONDA_LOCATIONS = (
+        os.path.expanduser('~/anaconda3'),
+        os.path.expanduser('~/miniconda3'),
+        '/opt/anaconda3',
+        '/opt/miniconda3',
+        '/opt/ohpc/pub/apps/anaconda3',
+        '/opt/ohpc/pub/apps/miniconda3',
+    )
+
+    for loc in CONDA_LOCATIONS:
+        if os.path.exists(loc):
+            return pjoin(loc, 'etc/profile.d/conda.sh')
+    return os.path.expanduser('~/.bashrc')
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='A one-liner for GSAI slurm sbatch scripts')
 
@@ -159,8 +175,10 @@ def write_sbatch_script(args: argparse.Namespace) -> str:
     if args.venv:
         run_prefix = 'source .venv/bin/activate; which python; '
     elif args.conda:
-        # FIXME `conda activate` requires initialization of shell environment
-        run_prefix = f'conda activate {args.conda}; which python; '
+        run_prefix = join_newline([
+            'source ' + _find_conda_init(),
+            f'conda activate {args.conda}; which python; '
+        ])
     elif args.docker:
         # _docker_setup = '  '
         _docker_setup = join_newline([
