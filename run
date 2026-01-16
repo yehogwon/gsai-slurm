@@ -226,7 +226,7 @@ def execute_sbatch(script_path: str, args: argparse.Namespace):
     sbatch_args.append(('--signal', f'SIGTERM@{CLEANUP_GRACE_PERIOD}'))
 
     if args.n_gpus == 0:
-        sbatch_args.append('--qos', 'nogpu')
+        sbatch_args.append(('--qos', 'nogpu'))
     elif 'A100' in args.partition and 'PCI' not in args.partition:
         sbatch_args.append(('--qos', 'hpgpu'))
 
