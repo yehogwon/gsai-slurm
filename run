@@ -3,6 +3,8 @@ import sys
 sys.dont_write_bytecode = True
 
 import os
+from os.path import join as pjoin
+
 import subprocess
 import tempfile
 import atexit
@@ -11,8 +13,8 @@ import argparse
 import secrets
 
 
-if __name__ != "__main__":
-    raise ImportError("This script cannot be imported as a module")
+# TODO: assertion on no defined SLURM_JOB_ID
+SLURM_LOCAL_DATA = '/local-data/user-data/$USER/$SLURM_JOB_ID'
 
 
 def print_blue(*args, **kwargs):
@@ -31,6 +33,15 @@ def print_green(*args, **kwargs):
     print('\033[1;32m', end='')
     print(*args, **kwargs)
     print('\033[0m', end='')
+
+
+def raise_die(msg: str, code: int=1):
+    print_red(msg)
+    sys.exit(code)
+
+
+def randomize(length: int=8) -> str:
+    return secrets.token_urlsafe(length)
 
 
 def join_newline(lst, num_newlines=1):
@@ -53,8 +64,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--n_cpus', type=int, required=True, help='Number of CPUs to request')
     parser.add_argument('--time', type=str, required=True, help='Time limit for the job (e.g., 01:00:00 for 1 hour)')
 
-    parser.add_argument('--precopy', nargs=2, action='append', metavar=('SRC', 'DST'), required=False, help='Specify a source and destination pair for file pre-copying')
-    parser.add_argument('--postcopy', nargs=2, action='append', metavar=('SRC', 'DST'), required=False, help='Specify a source and destination pair for file post-copying')
+    parser.add_argument('--precopy', nargs=2, action='append', metavar=('NAME', 'SRC'), required=False, help='Specify a source and destination pair for file pre-copying')
+    parser.add_argument('--postcopy', nargs=2, action='append', metavar=('NAME', 'DST'), required=False, help='Specify a source and destination pair for file post-copying')
 
     parser.add_argument('command', nargs='+', help='The command to execute')
 
@@ -62,27 +73,54 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def copy_cleanups(args: argparse.Namespace) -> tuple[str, str, str]:
+def copy_cleanups(args: argparse.Namespace) -> tuple[str, str, str, dict[str, str]]:
     pre_copy = []
     post_copy = []
     cleanup = []
+    mappings = {}
 
-    # TODO: automatic mapping
-    for precp_src, precp_dst in (args.precopy or []):
+    _names = [n for n, _, _ in (args.precopy or [])] + [n for n, _, _ in (args.postcopy or [])]
+    if len(_names) != len(set(_names)):
+        raise_die('Error: Duplicate names found in precopy/postcopy arguments')
+
+    precp_prefix = pjoin(SLURM_LOCAL_DATA, 'PRE')
+    postcp_prefix = pjoin(SLURM_LOCAL_DATA, 'POST')
+
+    pre_copy.append(f'mkdir -p "{precp_prefix}"')
+    cleanup.append(f'rm -drf "{SLURM_LOCAL_DATA}"')
+    post_copy.append(f'mkdir -p "{postcp_prefix}"')
+
+    for precp_name, precp_src in (args.precopy or []):
         precp_src = precp_src.rstrip('/')
-        precp_dst = precp_dst.rstrip('/')
-        pre_copy.append(f'mkdir -p "{precp_dst}"')
-        pre_copy.append(f'tar -cf - -C "{precp_src}" . | tar -xf - -C "{precp_dst}"')
-        cleanup.append(f'rm -drf "{precp_dst}"')
 
-    for postcp_src, postcp_dst in (args.postcopy or []):
-        postcp_src = postcp_src.rstrip('/')
+        if not os.path.exists(precp_src):
+            raise_die(f'Precopy source path does not exist: {precp_src}')
+
+        path = pjoin(precp_prefix, randomize())
+        mappings[precp_name] = path
+
+        _pre_copy = []
+        _pre_copy.append(f'mkdir -p "{path}"')
+        _pre_copy.append(f'tar -cf - -C "{precp_src}" . | tar -xf - -C "{path}"')
+        pre_copy.extend(_pre_copy)
+    
+    for postcp_name, postcp_dst in (args.postcopy or []):
         postcp_dst = postcp_dst.rstrip('/')
-        post_copy.append(f'mkdir -p "{postcp_dst}"')
-        post_copy.append(f'tar -cf - -C "{postcp_src}" . | tar -xf - -C "{postcp_dst}"')
-        cleanup.append(f'rm -drf "{postcp_src}"')
 
-    return (join_newline(x) for x in (pre_copy, post_copy, cleanup))
+        path = pjoin(postcp_prefix, randomize())
+        mappings[postcp_name] = path
+
+        _post_copy = []
+        _post_copy.append(f'mkdir -p "{path}"')
+        _post_copy.append(f'tar -cf - -C "{path}" . | tar -xf - -C "{postcp_dst}"')
+        post_copy.extend(_post_copy)
+
+    return (
+        join_newline(pre_copy),
+        join_newline(post_copy),
+        join_newline(cleanup),
+        mappings
+    )
 
 
 def write_sbatch_script(args: argparse.Namespace) -> str:
@@ -117,7 +155,7 @@ def write_sbatch_script(args: argparse.Namespace) -> str:
             'export GPULIST="device=${UUIDLIST}"',
             'export CPULIST=$(grep "Cpus_allowed_list" /proc/self/status | awk \'{print $2}\');'
         ])
-        _docker_rand = secrets.token_urlsafe(20)
+        _docker_rand = randomize()
         run_prefix = f'docker run --rm --pull always --init --gpus $GPULIST --cpuset-cpus $CPULIST -e WANDB_API_KEY=$WANDB_API_KEY --volume $(pwd):/workspace --name $(whoami)_{_docker_rand} {args.docker} '
         run_prefix = join_newline([_docker_setup, run_prefix])
     elif args.singularity:
@@ -127,14 +165,18 @@ def write_sbatch_script(args: argparse.Namespace) -> str:
     else:
         run_prefix = ''
     
-    precopy, postcopy, cleanup = copy_cleanups(args)
+    precopy, postcopy, cleanup, copy_lookup = copy_cleanups(args)
+    command = join_newline(args.command, num_newlines=0)
+    for name, path in copy_lookup.items():
+        parsed_command = command.replace('{{' + name + '}}', f'"{path}"')
+    exec_cmd = run_prefix + parsed_command
 
     script_contents = []
     script_contents.append(status_code)
     script_contents.append('echo " *** Precopying *** "')
     script_contents.append(precopy)
     script_contents.append('echo " *** Executing command *** "')
-    script_contents.append(run_prefix + join_newline(args.command, num_newlines=0))
+    script_contents.append(exec_cmd)
     script_contents.append('echo " *** Postcopying *** "')
     script_contents.append(postcopy)
     script_contents.append('echo " *** Cleaning-up *** "')
@@ -176,6 +218,9 @@ def execute_sbatch(script_path: str, args: argparse.Namespace):
     subprocess.run(sbatch_command, shell=True)
 
 
-args = parse_args()
-path = write_sbatch_script(args)
-execute_sbatch(path, args)
+if __name__ == '__main__':
+    args = parse_args()
+    path = write_sbatch_script(args)
+    execute_sbatch(path, args)
+else:
+    raise_die("This script cannot be imported as a module")
