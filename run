@@ -61,6 +61,30 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     return args
 
+
+def copy_cleanups(args: argparse.Namespace) -> tuple[str, str, str]:
+    pre_copy = []
+    post_copy = []
+    cleanup = []
+
+    # TODO: automatic mapping
+    for precp_src, precp_dst in (args.precopy or []):
+        precp_src = precp_src.rstrip('/')
+        precp_dst = precp_dst.rstrip('/')
+        pre_copy.append(f'mkdir -p "{precp_dst}"')
+        pre_copy.append(f'tar -cf - -C "{precp_src}" . | tar -xf - -C "{precp_dst}"')
+        cleanup.append(f'rm -drf "{precp_dst}"')
+
+    for postcp_src, postcp_dst in (args.postcopy or []):
+        postcp_src = postcp_src.rstrip('/')
+        postcp_dst = postcp_dst.rstrip('/')
+        post_copy.append(f'mkdir -p "{postcp_dst}"')
+        post_copy.append(f'tar -cf - -C "{postcp_src}" . | tar -xf - -C "{postcp_dst}"')
+        cleanup.append(f'rm -drf "{postcp_src}"')
+
+    return (join_newline(x) for x in (pre_copy, post_copy, cleanup))
+
+
 def write_sbatch_script(args: argparse.Namespace) -> str:
     status_code = join_newline([
         '#!/bin/bash',
@@ -102,47 +126,31 @@ def write_sbatch_script(args: argparse.Namespace) -> str:
         run_prefix = _singularity_setup + run_prefix
     else:
         run_prefix = ''
-
-    pre_copy = []
-    post_copy = []
-    cleanup = []
-
-    # TODO: automatic mapping
-    for precp_src, precp_dst in (args.precopy or []):
-        precp_src = precp_src.rstrip('/')
-        precp_dst = precp_dst.rstrip('/')
-        pre_copy.append(f'mkdir -p "{precp_dst}"')
-        pre_copy.append(f'tar -cf - -C "{precp_src}" . | tar -xf - -C "{precp_dst}"')
-        cleanup.append(f'rm -drf "{precp_dst}"')
-
-    for postcp_src, postcp_dst in (args.postcopy or []):
-        postcp_src = postcp_src.rstrip('/')
-        postcp_dst = postcp_dst.rstrip('/')
-        post_copy.append(f'mkdir -p "{postcp_dst}"')
-        post_copy.append(f'tar -cf - -C "{postcp_src}" . | tar -xf - -C "{postcp_dst}"')
-        cleanup.append(f'rm -drf "{postcp_src}"')
+    
+    precopy, postcopy, cleanup = copy_cleanups(args)
 
     script_contents = []
     script_contents.append(status_code)
     script_contents.append('echo " *** Precopying *** "')
-    script_contents.append(join_newline(pre_copy))
+    script_contents.append(precopy)
     script_contents.append('echo " *** Executing command *** "')
     script_contents.append(run_prefix + join_newline(args.command, num_newlines=0))
     script_contents.append('echo " *** Postcopying *** "')
-    script_contents.append(join_newline(post_copy))
+    script_contents.append(postcopy)
     script_contents.append('echo " *** Cleaning-up *** "')
-    script_contents.append(join_newline(cleanup))
+    script_contents.append(cleanup)
     
     script_contents = join_newline(script_contents, num_newlines=2)
     sbatch_script.write(script_contents)
     sbatch_script.close()
 
     print_green('Wrote the following sbatch script:')
-    print(script_contents)
+    print(script_contents, end='\n\n')
     print_green('to:', end=' ')
-    print(script_path)
+    print(script_path, end='\n\n')
 
     return script_path
+
 
 def execute_sbatch(script_path: str, args: argparse.Namespace):
     sbatch_args = []
@@ -163,9 +171,10 @@ def execute_sbatch(script_path: str, args: argparse.Namespace):
     sbatch_command = f'sbatch {sbatch_args} {script_path}'
 
     print_green('Running the following sbatch command:')
-    print(sbatch_command)
+    print(sbatch_command, end='\n\n')
 
     subprocess.run(sbatch_command, shell=True)
+
 
 args = parse_args()
 path = write_sbatch_script(args)
