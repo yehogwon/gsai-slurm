@@ -62,24 +62,21 @@ def parse_args() -> argparse.Namespace:
     return args
 
 def write_sbatch_script(args: argparse.Namespace) -> str:
-    status_code = """#!/bin/bash
-
-    cd $SLURM_SUBMIT_DIR
-    echo "SLURM_JOB_NAME=$SLURM_JOB_NAME"
-    echo "SLURM_JOB_ID=$SLURM_JOB_ID"
-    echo "SLURM_SUBMIT_DIR=$SLURM_SUBMIT_DIR"
-
-    echo "HOSTNAME: $(hostname)"
-    echo "DATE: $(date)"
-
-    echo "%%%%%%%%%%%% GPU INFO %%%%%%%%%%%%"
-    echo "CUDA_HOME=$CUDA_HOME"
-    echo "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
-    echo "CUDA_VERSION=$CUDA_VERSION"
-
-    nvidia-smi
-    nvidia-smi -L
-    """
+    status_code = join_newline([
+        '#!/bin/bash',
+        'cd $SLURM_SUBMIT_DIR',
+        'echo "SLURM_JOB_NAME=$SLURM_JOB_NAME"',
+        'echo "SLURM_JOB_ID=$SLURM_JOB_ID"',
+        'echo "SLURM_SUBMIT_DIR=$SLURM_SUBMIT_DIR"',
+        'echo "HOSTNAME: $(hostname)"',
+        'echo "DATE: $(date)"',
+        'echo "%%%%%%%%%%%% GPU INFO %%%%%%%%%%%%"',
+        'echo "CUDA_HOME=$CUDA_HOME"',
+        'echo "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"',
+        'echo "CUDA_VERSION=$CUDA_VERSION"',
+        'nvidia-smi',
+        'nvidia-smi -L',
+    ])
 
     sbatch_script = tempfile.NamedTemporaryFile(mode='w', delete=False)
     script_path = sbatch_script.name
@@ -149,18 +146,18 @@ def write_sbatch_script(args: argparse.Namespace) -> str:
 
 def execute_sbatch(script_path: str, args: argparse.Namespace):
     sbatch_args = []
-    sbatch_args.append('--job-name', args.jobname)
-    sbatch_args.append('--out', f'$HOME/slurm_log/out/$job_name.{args.jobname}.out')
-    sbatch_args.append('--err', f'$HOME/slurm_log/err/$job_name.{args.jobname}.err')
-    sbatch_args.append('--partition', args.partition)
-    sbatch_args.append('--nodes', '1')  # TODO: support multi-node distributed jobs
-    sbatch_args.append('--ntasks', '1')
-    sbatch_args.append('--gres', f'gpu:{args.n_gpus}')
-    sbatch_args.append('--cpus-per-task', args.n_cpus)
-    sbatch_args.append('--time', args.time)
+    sbatch_args.append(('--job-name', args.jobname))
+    sbatch_args.append(('--out', f'$HOME/slurm_log/out/$job_name.{args.jobname}.out'))
+    sbatch_args.append(('--err', f'$HOME/slurm_log/err/$job_name.{args.jobname}.err'))
+    sbatch_args.append(('--partition', args.partition))
+    sbatch_args.append(('--nodes', '1'))  # TODO: support multi-node distributed jobs
+    sbatch_args.append(('--ntasks', '1'))
+    sbatch_args.append(('--gres', f'gpu:{args.n_gpus}'))
+    sbatch_args.append(('--cpus-per-task', args.n_cpus))
+    sbatch_args.append(('--time', args.time))
 
     if 'A100' in args.partition and 'PCI' not in args.partition:
-        sbatch_args.append('qos', 'hpgpu')
+        sbatch_args.append(('qos', 'hpgpu'))
 
     sbatch_args = join_newline([f'{k} {v}' for k, v in sbatch_args], num_newlines=0)
     sbatch_command = f'sbatch {sbatch_args} {script_path}'
