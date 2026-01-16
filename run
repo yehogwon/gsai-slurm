@@ -98,6 +98,8 @@ def copy_cleanups(args: argparse.Namespace) -> tuple[str, str, str, dict[str, st
             raise_die(f'Precopy source path does not exist: {precp_src}')
 
         src_parent, src_name = os.path.split(precp_src)
+        if not src_parent:
+            src_parent = '.'
         path = pjoin(precp_prefix, randomize())
         mappings[precp_name] = pjoin(path, src_name)
 
