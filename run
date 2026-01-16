@@ -79,7 +79,6 @@ def parse_args() -> argparse.Namespace:
 def copy_cleanups(args: argparse.Namespace) -> tuple[str, str, str, dict[str, str]]:
     preproc = []
     postproc = []
-    cleanup = []
     mappings = {}
 
     _names = [n for n, _ in (args.precopy + args.postcopy)]
@@ -90,8 +89,7 @@ def copy_cleanups(args: argparse.Namespace) -> tuple[str, str, str, dict[str, st
     postcp_prefix = pjoin(SLURM_LOCAL_DATA, 'POST')
 
     preproc.append(f'mkdir -p "{precp_prefix}"')
-    cleanup.append(f'rm -drf "{SLURM_LOCAL_DATA}"')
-    postproc.append(f'mkdir -p "{postcp_prefix}"')
+    preproc.append(f'mkdir -p "{postcp_prefix}"')
 
     for precp_name, precp_src in (args.precopy):
         precp_src = precp_src.rstrip('/')
@@ -120,7 +118,7 @@ def copy_cleanups(args: argparse.Namespace) -> tuple[str, str, str, dict[str, st
     trap_cleanup = join_newline([
         'cleanup__() {',
         '    echo " *** Running cleanup... *** "',
-    ] + [f'    {line}' for line in cleanup] + [
+        f'    rm -drf "{SLURM_LOCAL_DATA}"'
         '    echo " *** Cleanup complete *** "',
         '}',
         'trap cleanup__ EXIT',
