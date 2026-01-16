@@ -31,6 +31,10 @@ def print_green(*args, **kwargs):
     print('\033[0m', end='')
 
 
+def join_newline(lst, num_newlines=1):
+    return ('\n' * num_newlines).join(lst)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='A one-liner for GSAI slurm sbatch scripts')
 
@@ -82,10 +86,15 @@ def write_sbatch_script(args: argparse.Namespace) -> str:
     elif args.conda:
         run_prefix = f'conda activate {args.conda}; which python; '
     elif args.docker:
-        _docker_setup = 'export UUIDLIST=$(nvidia-smi -L | cut -d \'(\' -f 2 | awk \'{print$2}\' | tr -d ")" | paste -s -d, -); export GPULIST=\"device=${UUIDLIST}\"; export CPULIST=$(grep "Cpus_allowed_list" /proc/self/status | awk \'{print $2}\'); '
+        # _docker_setup = '  '
+        _docker_setup = join_newline([
+            'export UUIDLIST=$(nvidia-smi -L | cut -d \'(\' -f 2 | awk \'{print$2}\' | tr -d ")" | paste -s -d, -)',
+            'export GPULIST="device=${UUIDLIST}"',
+            'export CPULIST=$(grep "Cpus_allowed_list" /proc/self/status | awk \'{print $2}\');'
+        ])
         _docker_rand = secrets.token_urlsafe(20)
         run_prefix = f'docker run --rm --pull always --init --gpus $GPULIST --cpuset-cpus $CPULIST -e WANDB_API_KEY=$WANDB_API_KEY --volume $(pwd):/workspace --name $(whoami)_{_docker_rand} {args.docker} '
-        run_prefix = _docker_setup + run_prefix
+        run_prefix = join_newline([_docker_setup, run_prefix])
     elif args.singularity:
         _singularity_setup = 'ml singularity; '
         run_prefix = f'singularity exec --nv --env WANDB_API_KEY=$WANDB_API_KEY --bind $(pwd):/workspace {args.singularity} '
@@ -119,15 +128,15 @@ def write_sbatch_script(args: argparse.Namespace) -> str:
     script_contents = []
     script_contents.append(status_code)
     script_contents.append('echo " *** Precopying *** "')
-    script_contents.append('\n'.join(pre_copy))
+    script_contents.append(join_newline(pre_copy))
     script_contents.append('echo " *** Executing command *** "')
     script_contents.append(run_prefix + ' '.join(args.command))
     script_contents.append('echo " *** Postcopying *** "')
-    script_contents.append('\n'.join(post_copy))
+    script_contents.append(join_newline(post_copy))
     script_contents.append('echo " *** Cleaning-up *** "')
-    script_contents.append('\n'.join(cleanup))
+    script_contents.append(join_newline(cleanup))
     
-    script_contents = '\n\n'.join(script_contents)
+    script_contents = join_newline(script_contents, num_newlines=2)
     sbatch_script.write(script_contents)
     sbatch_script.close()
 
