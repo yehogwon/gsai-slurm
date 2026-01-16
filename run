@@ -3,6 +3,7 @@ import sys
 sys.dont_write_bytecode = True
 
 import os
+import subprocess
 import argparse
 import secrets
 import tempfile
@@ -11,105 +12,152 @@ import tempfile
 if __name__ != "__main__":
     raise ImportError("This script cannot be imported as a module")
 
-parser = argparse.ArgumentParser(description='A one-liner for GSAI slurm sbatch scripts')
 
-env_group = parser.add_mutually_exclusive_group()
-env_group.add_argument('--venv', action='store_true', help='Use the default virtual environment')
-env_group.add_argument('--conda', type=str, help='Use a Conda environment with the given name')
-env_group.add_argument('--docker', type=str, help='Use a Docker image with the given name')
-env_group.add_argument('--singularity', type=str, help='Use a Singularity image with the given file name')
+def print_blue(*args, **kwargs):
+    print('\033[1;34m', end='')
+    print(*args, **kwargs)
+    print('\033[0m', end='')
 
-parser.add_argument('--jobname', type=str, required=True, help='Name of the job')
-parser.add_argument('--partition', type=str, required=True, help='Slurm partition to use')
-parser.add_argument('--n_gpus', type=int, required=True, help='Number of GPUs to request')
-parser.add_argument('--n_cpus', type=int, required=True, help='Number of CPUs to request')
-parser.add_argument('--time', type=str, required=True, help='Time limit for the job (e.g., 01:00:00 for 1 hour)')
 
-parser.add_argument('--precopy', nargs=2, action='append', metavar=('SRC', 'DST'), required=False, help='Specify a source and destination pair for file pre-copying')
-parser.add_argument('--postcopy', nargs=2, action='append', metavar=('SRC', 'DST'), required=False, help='Specify a source and destination pair for file post-copying')
+def print_red(*args, **kwargs):
+    print('\033[1;31m', end='')
+    print(*args, **kwargs)
+    print('\033[0m', end='')
 
-parser.add_argument('command', nargs='+', help='The command to execute')
 
-args = parser.parse_args()
+def print_green(*args, **kwargs):
+    print('\033[1;32m', end='')
+    print(*args, **kwargs)
+    print('\033[0m', end='')
 
-status_code = """#!/bin/bash
 
-cd $SLURM_SUBMIT_DIR
-echo "SLURM_JOB_NAME=$SLURM_JOB_NAME"
-echo "SLURM_JOB_ID=$SLURM_JOB_ID"
-echo "SLURM_SUBMIT_DIR=$SLURM_SUBMIT_DIR"
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description='A one-liner for GSAI slurm sbatch scripts')
 
-echo "HOSTNAME: $(hostname)"
-echo "DATE: $(date)"
+    env_group = parser.add_mutually_exclusive_group()
+    env_group.add_argument('--venv', action='store_true', help='Use the default virtual environment')
+    env_group.add_argument('--conda', type=str, help='Use a Conda environment with the given name')
+    env_group.add_argument('--docker', type=str, help='Use a Docker image with the given name')
+    env_group.add_argument('--singularity', type=str, help='Use a Singularity image with the given file name')
 
-echo "%%%%%%%%%%%% GPU INFO %%%%%%%%%%%%"
-echo "CUDA_HOME=$CUDA_HOME"
-echo "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
-echo "CUDA_VERSION=$CUDA_VERSION"
+    parser.add_argument('--jobname', type=str, required=True, help='Name of the job')
+    parser.add_argument('--partition', type=str, required=True, help='Slurm partition to use')
+    parser.add_argument('--n_gpus', type=int, required=True, help='Number of GPUs to request')
+    parser.add_argument('--n_cpus', type=int, required=True, help='Number of CPUs to request')
+    parser.add_argument('--time', type=str, required=True, help='Time limit for the job (e.g., 01:00:00 for 1 hour)')
 
-nvidia-smi
-nvidia-smi -L
-"""
+    parser.add_argument('--precopy', nargs=2, action='append', metavar=('SRC', 'DST'), required=False, help='Specify a source and destination pair for file pre-copying')
+    parser.add_argument('--postcopy', nargs=2, action='append', metavar=('SRC', 'DST'), required=False, help='Specify a source and destination pair for file post-copying')
 
-sbatch_script = tempfile.NamedTemporaryFile(mode='w', delete=False)
-print('Creating sbatch script at:', sbatch_script.name)
+    parser.add_argument('command', nargs='+', help='The command to execute')
 
-if args.venv:
-    run_prefix = 'source .venv/bin/activate; which python; '
-elif args.conda:
-    run_prefix = f'conda activate {args.conda}; which python; '
-elif args.docker:
-    _docker_setup = 'export UUIDLIST=$(nvidia-smi -L | cut -d \'(\' -f 2 | awk \'{print$2}\' | tr -d ")" | paste -s -d, -); export GPULIST=\"device=${UUIDLIST}\"; export CPULIST=$(grep "Cpus_allowed_list" /proc/self/status | awk \'{print $2}\'); '
-    _docker_rand = secrets.token_urlsafe(20)
-    run_prefix = f'docker run --rm --pull always --init --gpus $GPULIST --cpuset-cpus $CPULIST -e WANDB_API_KEY=$WANDB_API_KEY --volume $(pwd):/workspace --name $(whoami)_{_docker_rand} {args.docker} '
-    run_prefix = _docker_setup + run_prefix
-elif args.singularity:
-    _singularity_setup = 'ml singularity; '
-    run_prefix = f'singularity exec --nv --env WANDB_API_KEY=$WANDB_API_KEY --bind $(pwd):/workspace {args.singularity} '
-    run_prefix = _singularity_setup + run_prefix
-else:
-    run_prefix = ''
+    args = parser.parse_args()
+    return args
 
-pre_copy = []
-post_copy = []
-cleanup = []
+def write_sbatch_script(args: argparse.Namespace) -> str:
+    status_code = """#!/bin/bash
 
-for precp_src, precp_dst in (args.precopy or []):
-    src_parent = os.path.dirname(precp_src)
-    src_name = os.path.basename(precp_src)
-    dst_parent = os.path.dirname(precp_dst)
-    dst_name = os.path.basename(precp_dst)
-    pre_copy.append(f'mkdir -p {dst_parent}')
-    pre_copy.append(f'tar -cf - -C {src_parent} {src_name} | tar -xf - -C {dst_parent} --transform "s|^{src_name}|{dst_name}|"')
-    cleanup.append(f'rm -drf {precp_dst}')
+    cd $SLURM_SUBMIT_DIR
+    echo "SLURM_JOB_NAME=$SLURM_JOB_NAME"
+    echo "SLURM_JOB_ID=$SLURM_JOB_ID"
+    echo "SLURM_SUBMIT_DIR=$SLURM_SUBMIT_DIR"
 
-for postcp_src, postcp_dst in (args.postcopy or []):
-    src_parent = os.path.dirname(postcp_src)
-    src_name = os.path.basename(postcp_src)
-    dst_parent = os.path.dirname(postcp_dst)
-    dst_name = os.path.basename(postcp_dst)
-    post_copy.append(f'mkdir -p {dst_parent}')
-    post_copy.append(f'tar -cf - -C {src_parent} {src_name} | tar -xf - -C {dst_parent} --transform "s|^{src_name}|{dst_name}|"')
-    cleanup.append(f'rm -drf {postcp_src}')
+    echo "HOSTNAME: $(hostname)"
+    echo "DATE: $(date)"
 
-command = ' '.join(args.command)
-sbatch_script.write(status_code + '\n\n')
-sbatch_script.write('echo " *** Precopying *** " \n\n')
-sbatch_script.write('\n'.join(pre_copy) + '\n\n')
-sbatch_script.write('echo " *** Executing command *** " \n\n')
-sbatch_script.write(run_prefix + command + '\n\n')
-sbatch_script.write('echo " *** Postcopying *** " \n\n')
-sbatch_script.write('\n'.join(post_copy) + '\n\n')
-sbatch_script.write('echo " *** Cleaning-up *** " \n\n')
-sbatch_script.write('\n'.join(cleanup) + '\n\n')
-sbatch_script.close()
+    echo "%%%%%%%%%%%% GPU INFO %%%%%%%%%%%%"
+    echo "CUDA_HOME=$CUDA_HOME"
+    echo "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
+    echo "CUDA_VERSION=$CUDA_VERSION"
 
-qos = ''
-if 'A100' in args.partition and 'PCI' not in args.partition:
-    qos = '--qos=hpgpu'
+    nvidia-smi
+    nvidia-smi -L
+    """
 
-stdout_path = f'$HOME/slurm_log/out/$job_name.{args.jobname}.out'
-stderr_path = f'$HOME/slurm_log/err/$job_name.{args.jobname}.err'
-sbatch_command = f'sbatch --job-name={args.jobname} --out {stdout_path} --err {stderr_path} --partition={args.partition} -N 1 -n 1 --gres=gpu:{args.n_gpus} {qos} --cpus-per-task={args.n_cpus} --time={args.time} {sbatch_script.name}'
+    sbatch_script = tempfile.NamedTemporaryFile(mode='w', delete=False)
+    script_path = sbatch_script.name
 
-os.system(sbatch_command)
+    if args.venv:
+        run_prefix = 'source .venv/bin/activate; which python; '
+    elif args.conda:
+        run_prefix = f'conda activate {args.conda}; which python; '
+    elif args.docker:
+        _docker_setup = 'export UUIDLIST=$(nvidia-smi -L | cut -d \'(\' -f 2 | awk \'{print$2}\' | tr -d ")" | paste -s -d, -); export GPULIST=\"device=${UUIDLIST}\"; export CPULIST=$(grep "Cpus_allowed_list" /proc/self/status | awk \'{print $2}\'); '
+        _docker_rand = secrets.token_urlsafe(20)
+        run_prefix = f'docker run --rm --pull always --init --gpus $GPULIST --cpuset-cpus $CPULIST -e WANDB_API_KEY=$WANDB_API_KEY --volume $(pwd):/workspace --name $(whoami)_{_docker_rand} {args.docker} '
+        run_prefix = _docker_setup + run_prefix
+    elif args.singularity:
+        _singularity_setup = 'ml singularity; '
+        run_prefix = f'singularity exec --nv --env WANDB_API_KEY=$WANDB_API_KEY --bind $(pwd):/workspace {args.singularity} '
+        run_prefix = _singularity_setup + run_prefix
+    else:
+        run_prefix = ''
+
+    pre_copy = []
+    post_copy = []
+    cleanup = []
+
+    # FIXME: copying with tar doesn't work well
+    for precp_src, precp_dst in (args.precopy or []):
+        src_parent = os.path.dirname(precp_src)
+        src_name = os.path.basename(precp_src)
+        dst_parent = os.path.dirname(precp_dst)
+        dst_name = os.path.basename(precp_dst)
+        pre_copy.append(f'mkdir -p {dst_parent}')
+        pre_copy.append(f'tar -cf - -C {src_parent} {src_name} | tar -xf - -C {dst_parent} --transform "s|^{src_name}|{dst_name}|"')
+        cleanup.append(f'rm -drf {precp_dst}')
+
+    for postcp_src, postcp_dst in (args.postcopy or []):
+        src_parent = os.path.dirname(postcp_src)
+        src_name = os.path.basename(postcp_src)
+        dst_parent = os.path.dirname(postcp_dst)
+        dst_name = os.path.basename(postcp_dst)
+        post_copy.append(f'mkdir -p {dst_parent}')
+        post_copy.append(f'tar -cf - -C {src_parent} {src_name} | tar -xf - -C {dst_parent} --transform "s|^{src_name}|{dst_name}|"')
+        cleanup.append(f'rm -drf {postcp_src}')
+
+    script_contents = []
+    script_contents.append(status_code)
+    script_contents.append('echo " *** Precopying *** "')
+    script_contents.append('\n'.join(pre_copy))
+    script_contents.append('echo " *** Executing command *** "')
+    script_contents.append(run_prefix + ' '.join(args.command))
+    script_contents.append('echo " *** Postcopying *** "')
+    script_contents.append('\n'.join(post_copy))
+    script_contents.append('echo " *** Cleaning-up *** "')
+    script_contents.append('\n'.join(cleanup))
+    
+    script_contents = '\n\n'.join(script_contents)
+    sbatch_script.write(script_contents)
+    sbatch_script.close()
+
+    print_green('Wrote the following sbatch script:')
+    print(script_contents)
+    print_green('to:', end=' ')
+    print(script_path)
+
+    return script_path
+
+def execute_sbatch(script_path: str, args: argparse.Namespace):
+    sbatch_args = []
+    sbatch_args.append('--job-name', args.jobname)
+    sbatch_args.append('--out', f'$HOME/slurm_log/out/$job_name.{args.jobname}.out')
+    sbatch_args.append('--err', f'$HOME/slurm_log/err/$job_name.{args.jobname}.err')
+    sbatch_args.append('--partition', args.partition)
+    sbatch_args.append('--nodes', '1')  # TODO: support multi-node distributed jobs
+    sbatch_args.append('--ntasks', '1')
+    sbatch_args.append('--gres', f'gpu:{args.n_gpus}')
+    sbatch_args.append('--cpus-per-task', args.n_cpus)
+    sbatch_args.append('--time', args.time)
+
+    if 'A100' in args.partition and 'PCI' not in args.partition:
+        sbatch_args.append('qos', 'hpgpu')
+
+    sbatch_args = ' '.join([f'{k} {v}' for k, v in sbatch_args])
+    sbatch_command = f'sbatch {sbatch_args} {script_path}'
+
+    print_green('Running the following sbatch command:')
+    print(sbatch_command)
+
+    subprocess.run(sbatch_command, shell=True)
+    os.remove(script_path)
