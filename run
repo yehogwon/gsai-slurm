@@ -84,8 +84,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--time', type=str, required=True, help='Time limit for the job (e.g., 01:00:00 for 1 hour)')
     parser.add_argument('--mem', type=str, default=0, help='Memory to request (0 for default; e.g., 16G)')
 
-    parser.add_argument('--precopy', nargs=2, action='append', metavar=('NAME', 'SRC'), required=False, default=[], help='Specify a source and destination pair for file pre-copying')
-    parser.add_argument('--postcopy', nargs=2, action='append', metavar=('NAME', 'DST'), required=False, default=[], help='Specify a source and destination pair for file post-copying')
+    parser.add_argument('--precopy', nargs=2, action='append', metavar=('NAME', 'SRC'), required=False, default=[], help='Copy SRC to local storage before command runs; use {{NAME}} in command to reference it')
+    parser.add_argument('--postcopy', nargs=2, action='append', metavar=('NAME', 'DST'), required=False, default=[], help='Create local storage path {{NAME}} for command output; copy to DST after command finishes')
 
     parser.add_argument('command', nargs=argparse.REMAINDER, help='The command to execute')
 
@@ -93,7 +93,7 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def copy_cleanups(args: argparse.Namespace) -> tuple[str, str, str, dict[str, str]]:
+def generate_copy_and_traps(args: argparse.Namespace) -> tuple[str, str, str, dict[str, str]]:
     preproc = []
     postproc = []
     mappings = {}
@@ -133,11 +133,10 @@ def copy_cleanups(args: argparse.Namespace) -> tuple[str, str, str, dict[str, st
         postproc.append(f'mkdir -p "{postcp_dst}"')
         postproc.append(f'tar -cf - -C "{path}" . | tar -xf - -C "{postcp_dst}"')
 
-    # EXIT trap for cleanup - runs on any exit (normal, error, or after signal)
-    trap_cleanup = join_newline([
+    trap_setup = join_newline([
         'cleanup__() {',
         '    echo " *** Running cleanup... *** "',
-        f'    rm -drf "{SLURM_LOCAL_DATA}"'
+        f'    rm -drf "{SLURM_LOCAL_DATA}"',
         '    echo " *** Cleanup complete *** "',
         '}',
         'trap cleanup__ EXIT',
@@ -147,7 +146,7 @@ def copy_cleanups(args: argparse.Namespace) -> tuple[str, str, str, dict[str, st
     return (
         join_newline(preproc),
         join_newline(postproc),
-        trap_cleanup,
+        trap_setup,
         mappings
     )
 
@@ -195,7 +194,7 @@ def write_sbatch_script(args: argparse.Namespace) -> str:
     else:
         run_prefix = ''
 
-    precopy, postcopy, cleanup, copy_lookup = copy_cleanups(args)
+    precopy, postcopy, trap_setup, copy_lookup = generate_copy_and_traps(args)
     parsed_command = join_newline(args.command, num_newlines=0)
     for name, path in copy_lookup.items():
         if ' ' in path:
@@ -205,7 +204,7 @@ def write_sbatch_script(args: argparse.Namespace) -> str:
 
     script_contents = []
     script_contents.append(status_code)
-    script_contents.append(cleanup)  # trap setup
+    script_contents.append(trap_setup)
     script_contents.append('echo " *** Precopying *** "')
     script_contents.append(precopy)
     script_contents.append('echo " *** Executing command *** "')
@@ -241,7 +240,7 @@ def execute_sbatch(script_path: str, args: argparse.Namespace):
     sbatch_args.append(('--gres', f'gpu:{args.n_gpus}'))
     sbatch_args.append(('--cpus-per-task', args.n_cpus))
     sbatch_args.append(('--time', args.time))
-    sbatch_args.append(('--signal', f'SIGTERM@{CLEANUP_GRACE_PERIOD}'))
+    sbatch_args.append(('--signal', f'TERM@{CLEANUP_GRACE_PERIOD}'))
 
     # optional args
     if args.nodelist:
