@@ -44,6 +44,11 @@ def randomize(length: int=8) -> str:
     return secrets.token_urlsafe(length)
 
 
+def indent(lst: list, indentation: int=4) -> list:
+    idt = ' ' * indentation
+    return [idt + line for line in lst]
+
+
 def join_newline(lst, num_newlines=1):
     sep = '\n' * num_newlines if num_newlines > 0 else ' '
     return sep.join(lst)
@@ -93,7 +98,7 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def generate_copy_and_traps(args: argparse.Namespace) -> tuple[str, str, str, dict[str, str]]:
+def generate_copy_and_traps(args: argparse.Namespace) -> tuple[str, str, dict[str, str]]:
     preproc = []
     postproc = []
     mappings = {}
@@ -133,20 +138,37 @@ def generate_copy_and_traps(args: argparse.Namespace) -> tuple[str, str, str, di
         postproc.append(f'mkdir -p "{postcp_dst}"')
         postproc.append(f'tar -cf - -C "{path}" . | tar -xf - -C "{postcp_dst}"')
 
-    trap_setup = join_newline([
-        'cleanup__() {',
-        '    echo " *** Running cleanup... *** "',
-        f'    rm -drf "{SLURM_LOCAL_DATA}"',
-        '    echo " *** Cleanup complete *** "',
+    _sigterm_trap = [
+        'echo " *** SIGTERM received, stopping command... *** "',
+        '[ -n "$MAIN_PID" ] && kill -TERM -$MAIN_PID 2>/dev/null',
+    ]
+
+    _exit_trap = [
+        'echo " *** Starting trap for EXIT *** "',
+        # post-copy
+        'echo " *** Starting post-copy... *** "',
+        join_newline(postproc),
+        'echo " *** Post-copy complete *** "',
+        # cleanup
+        'echo " *** Running cleanup... *** "',
+        f'rm -drf "{SLURM_LOCAL_DATA}"',
+        'echo " *** Cleanup complete *** "'
+    ]
+
+    trap_setup = [
+        'trap_sigterm__() {',
+        join_newline(indent(_sigterm_trap), num_newlines=1),
         '}',
-        'trap cleanup__ EXIT',
-        'trap \'echo " *** Signal received, will postcopy after command exits... *** "\' SIGTERM SIGINT',
-    ])
+        'trap trap_sigterm__ SIGTERM SIGINT',
+        'trap_exit__() {',
+        join_newline(indent(_exit_trap), num_newlines=1),
+        '}',
+        'trap trap_exit__ EXIT',
+    ]
 
     return (
         join_newline(preproc),
-        join_newline(postproc),
-        trap_setup,
+        join_newline(trap_setup),
         mappings
     )
 
@@ -194,7 +216,7 @@ def write_sbatch_script(args: argparse.Namespace) -> str:
     else:
         run_prefix = ''
 
-    precopy, postcopy, trap_setup, copy_lookup = generate_copy_and_traps(args)
+    precopy, trap_setup, copy_lookup = generate_copy_and_traps(args)
     parsed_command = join_newline(args.command, num_newlines=0)
     for name, path in copy_lookup.items():
         if ' ' in path:
@@ -205,15 +227,18 @@ def write_sbatch_script(args: argparse.Namespace) -> str:
     script_contents = []
     script_contents.append(status_code)
     script_contents.append(trap_setup)
+
     script_contents.append('echo " *** Precopying *** "')
     script_contents.append(precopy)
+    script_contents.append('echo " *** Precopy complete *** "')
+
     script_contents.append('echo " *** Executing command *** "')
-    script_contents.append(exec_cmd)
-    script_contents.append('CMD_EXIT_CODE=$?')  # capture exit code
-    script_contents.append('echo " *** Command exited with code $CMD_EXIT_CODE *** "')
-    script_contents.append('echo " *** Postcopying *** "')
-    script_contents.append(postcopy)
-    script_contents.append('exit $CMD_EXIT_CODE')  # preserve original exit code
+    script_contents.append('set -m')
+    script_contents.append(f'({exec_cmd}) &')
+    script_contents.append('MAIN_PID=$!')
+    script_contents.append('set +m')
+    script_contents.append('wait $MAIN_PID 2>/dev/null')
+    script_contents.append('echo " *** Command finished *** "')
 
     script_contents = join_newline(script_contents, num_newlines=2)
     sbatch_script.write(script_contents)
