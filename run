@@ -176,7 +176,6 @@ def generate_copy_and_traps(args: argparse.Namespace) -> tuple[str, str, dict[st
 def write_sbatch_script(args: argparse.Namespace) -> str:
     status_code = join_newline([
         '#!/bin/bash',
-        '#SBATCH --shell=/bin/bash',
         'cd $SLURM_SUBMIT_DIR',
         'echo "SLURM_JOB_NAME=$SLURM_JOB_NAME"',
         'echo "SLURM_JOB_ID=$SLURM_JOB_ID"',
@@ -191,7 +190,7 @@ def write_sbatch_script(args: argparse.Namespace) -> str:
         'nvidia-smi -L',
     ])
 
-    sbatch_script = tempfile.NamedTemporaryFile(mode='w', delete=False)
+    sbatch_script = tempfile.NamedTemporaryFile(mode='w', delete=False, newline='\n')
     script_path = sbatch_script.name
     atexit.register(os.remove, script_path)
 
