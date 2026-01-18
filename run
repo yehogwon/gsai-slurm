@@ -16,6 +16,12 @@ import secrets
 SLURM_LOCAL_DATA = '/local-data/user-data/$USER/$SLURM_JOB_ID'
 CLEANUP_GRACE_PERIOD = 120  # seconds
 
+# env overrides (None for just propagation)
+envs = {
+    'TQDM_MININTERVAL': 10,
+    'WANDB_API_KEY': None
+}
+
 
 def print_blue(*args, **kwargs):
     print('\033[1;34m', end='')
@@ -194,6 +200,7 @@ def write_sbatch_script(args: argparse.Namespace) -> str:
     script_path = sbatch_script.name
     atexit.register(os.remove, script_path)
 
+    # TODO: support various volumes for docker/singularity
     if args.venv:
         run_prefix = 'source .venv/bin/activate; which python; '
     elif args.conda:
@@ -209,10 +216,18 @@ def write_sbatch_script(args: argparse.Namespace) -> str:
             'export CPULIST=$(grep "Cpus_allowed_list" /proc/self/status | awk \'{print $2}\');'
         ])
         _docker_rand = randomize()
-        run_prefix = f'docker run --rm --pull always --init --gpus $GPULIST --cpuset-cpus $CPULIST -e WANDB_API_KEY=$WANDB_API_KEY --volume $(pwd):/workspace --name $(whoami)_{_docker_rand} {args.docker} '
+        run_prefix = f'docker run --rm --pull always --init --gpus $GPULIST --cpuset-cpus $CPULIST -e {join_newline([k for k in envs.keys()], num_newlines=0)} --volume $(pwd):/workspace --name $(whoami)_{_docker_rand} {args.docker} '
         run_prefix = join_newline([_docker_setup, run_prefix])
     elif args.singularity:
+        _singularity_envs = []
+        for k, v in envs.items():
+            if v is None:
+                _singularity_envs.append(f'{k}=${k}')
+            else:
+                _singularity_envs.append(f'{k}={v}')
+        _singularity_envs = join_newline([f'export SINGULARITYENV_{x}' for x in _singularity_envs])
         run_prefix = f'singularity exec --nv --env WANDB_API_KEY=$WANDB_API_KEY --bind $(pwd):/workspace {args.singularity} '
+        run_prefix = _singularity_envs + '\n' + run_prefix
     else:
         run_prefix = ''
 
@@ -231,6 +246,13 @@ def write_sbatch_script(args: argparse.Namespace) -> str:
     script_contents.append('echo " *** Precopying *** "')
     script_contents.append(precopy)
     script_contents.append('echo " *** Precopy complete *** "')
+
+    script_contents.append('echo " *** Env setup *** "')
+    script_contents.append(join_newline([
+        f'export {k}="{v}"'
+        for k, v in filter(lambda item: item[1] is not None, envs.items())
+    ]))
+    script_contents.append('echo " *** Env setup complete *** "')
 
     script_contents.append('echo " *** Executing command *** "')
     script_contents.append('set -m')
