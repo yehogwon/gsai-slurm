@@ -153,11 +153,11 @@ def generate_copy_and_traps(args: argparse.Namespace) -> tuple[str, str, dict[st
         'echo " *** Starting trap for EXIT *** "',
         # post-copy
         'echo " *** Starting post-copy... *** "',
-        join_newline(postproc),
+        join_newline(['set -x'] + postproc + ['set +x']),
         'echo " *** Post-copy complete *** "',
         # cleanup
         'echo " *** Running cleanup... *** "',
-        f'rm -drf "{SLURM_LOCAL_DATA}"',
+        join_newline(['set -x', f'rm -drf "{SLURM_LOCAL_DATA}"', 'set +x']),
         'echo " *** Cleanup complete *** "'
     ]
 
@@ -173,7 +173,7 @@ def generate_copy_and_traps(args: argparse.Namespace) -> tuple[str, str, dict[st
     ]
 
     return (
-        join_newline(preproc),
+        join_newline(['set -x'] + preproc + ['set +x']),
         join_newline(trap_setup),
         mappings
     )
