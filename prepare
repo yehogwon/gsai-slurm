@@ -6,7 +6,7 @@
 # copies datasets to local job directory
 ###########################################
 
-set -euo pipefail
+# set -euo pipefail
 
 if [ -z "${SLURM_JOB_ID:-}" ]; then
     echo "[ERROR] SLURM_JOB_ID not set (not running in a Slurm job?)"
