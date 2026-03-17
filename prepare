@@ -1,0 +1,112 @@
+#!/bin/env /bin/bash
+
+###########################################
+# sources necessary environment vars
+# handles docker/uv setup
+# copies datasets to local job directory
+###########################################
+
+set -euo pipefail
+
+if [ -z "${SLURM_JOB_ID:-}" ]; then
+    echo "[ERROR] SLURM_JOB_ID not set (not running in a Slurm job?)"
+    exit 1
+fi
+
+ENV_FILE="/run/slurm/job_env_${SLURM_JOB_ID}"
+if [ ! -f "$ENV_FILE" ]; then
+    echo "[ERROR] $ENV_FILE not found (prolog failed?)"
+    exit 1
+fi
+source "$ENV_FILE"
+
+echo "%%%%%%%%%%%%%%%% SLURM INFO %%%%%%%%%%%%%%%%%"
+echo "SLURM_JOB_NAME=$SLURM_JOB_NAME"
+echo "SLURM_JOB_ID=$SLURM_JOB_ID"
+echo "SLURM_SUBMIT_DIR=$SLURM_SUBMIT_DIR"
+echo "LOCAL_JOB_BASE=$LOCAL_JOB_BASE"
+echo ""
+
+echo "%%%%%%%%%%%%%%%%%% STATUS %%%%%%%%%%%%%%%%%%%"
+echo "HOSTNAME: $(hostname)"
+echo "DATE: $(date)"
+echo ""
+
+echo "%%%%%%%%%%%%%%%%% GPU INFO %%%%%%%%%%%%%%%%%%"
+nvidia-smi
+nvidia-smi -L
+echo ""
+
+
+if declare -p SBATCH_MODE >/dev/null 2>&1; then
+    echo "SBATCH_MODE=$SBATCH_MODE"
+else
+    echo "SBATCH_MODE=<unset>"
+fi
+echo ""
+
+case "${SBATCH_MODE:-}" in
+    DOCKER)
+        echo "%%%%%%%%%%%%%%%%%% DOCKER %%%%%%%%%%%%%%%%%%%"
+        export CPULIST=$(grep "Cpus_allowed_list" /proc/self/status | awk '{print $2}')
+        echo "CPULIST=$CPULIST"
+
+        export UUIDLIST=$(nvidia-smi -L | cut -d '(' -f 2 | awk '{print$2}' | tr -d ")" | paste -s -d, -)
+        echo "UUIDLIST=$UUIDLIST"
+
+        export GPULIST="device=${UUIDLIST}"
+        echo "GPULIST=$GPULIST"
+
+        RAND=$(printf '%04x%04x' "$RANDOM" "$RANDOM")
+        RAND=${RAND:0:6}
+        export DOCKER_NAME="${USER}_${RAND}"
+        echo "DOCKER_NAME=$DOCKER_NAME"
+        echo ""
+
+        if [ -f .venv/bin/activate ]; then
+            echo "%%%%%%%%%%%%%%%%%%%% UV %%%%%%%%%%%%%%%%%%%%%"
+            source .venv/bin/activate
+            echo "source .venv/bin/activate"
+            echo ""
+        fi
+        ;;
+    UV)
+        echo "%%%%%%%%%%%%%%%%%%%% UV %%%%%%%%%%%%%%%%%%%%%"
+        if [ ! -f .venv/bin/activate ]; then
+            echo "[ERROR] .venv/bin/activate not found"
+            exit 1
+        fi
+        source .venv/bin/activate
+        echo "source .venv/bin/activate"
+        echo ""
+        ;;
+    '')
+        ;;
+    *)
+        echo "[ERROR] Unknown SBATCH_MODE: $SBATCH_MODE"
+        exit 1
+        ;;
+esac
+
+if declare -p DATASETS >/dev/null 2>&1; then
+    if declare -p DATASETS 2>/dev/null | grep -q 'declare -a'; then
+        DATASET_PATHS=("${DATASETS[@]}")
+    else
+        DATASET_PATHS=("$DATASETS")
+    fi
+
+    echo "%%%%%%%%%%%%%%%%%% DATASET %%%%%%%%%%%%%%%%%%"
+    for DATASET_PATH in "${DATASET_PATHS[@]}"; do
+        if [ ! -e "$DATASET_PATH" ]; then
+            echo "[ERROR] Dataset path not found: $DATASET_PATH"
+            exit 1
+        fi
+
+        echo "Copying dataset: $DATASET_PATH -> $LOCAL_JOB_BASE/"
+        rsync -aHAX --numeric-ids --info=progress2 --no-inc-recursive \
+          --inplace --whole-file --preallocate \
+          "$DATASET_PATH" "$LOCAL_JOB_BASE/"
+    done
+
+    echo ""
+fi
